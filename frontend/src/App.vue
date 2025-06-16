@@ -13,13 +13,10 @@
 
 <script lang="ts">
 import { defineComponent, ref } from 'vue'
-import TheHeader from '@/components/TheHeader.vue'
-import TheFooter from '@/components/TheFooter.vue'
 import { useAuth } from '@/stores/useAuth'
 import { useSocket } from '@/lib/socket'
 
 export default defineComponent({
-  components: { TheHeader, TheFooter },
 
   setup() {
     // ①  All reactive/stateful logic goes *inside* setup()
