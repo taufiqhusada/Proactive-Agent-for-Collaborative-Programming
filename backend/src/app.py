@@ -126,6 +126,17 @@ def ws_cursor(data):
     # Broadcast cursor position to all other clients in the room
     emit("cursor", data, room=room, include_self=False)
 
+@socketio.on("selection", namespace="/ws")
+def ws_selection(data):
+    """
+    Forward text selection/highlighting to everyone else in the room.
+    """
+    print(f"WS selection from {request.sid} in room {data['room']}")
+    room = data["room"]
+    
+    # Broadcast selection to all other clients in the room
+    emit("selection", data, room=room, include_self=False)
+
 @socketio.on("chat_message", namespace="/ws")
 def ws_chat_message(data):
     """

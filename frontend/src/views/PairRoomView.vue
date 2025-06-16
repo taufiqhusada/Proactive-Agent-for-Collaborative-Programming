@@ -51,7 +51,8 @@
                 <PairChat 
                     :socket="socket" 
                     :room-id="roomId" 
-                    :current-user-id="currentUserId" />
+                    :current-user-id="currentUserId"
+                    :username="auth?.user || 'Guest'" />
             </div>
         </div>
     </div>
@@ -72,6 +73,7 @@ import { useRoute } from 'vue-router'
 import { useSocket } from '@/lib/socket'
 import { runCode } from '@/lib/runCode'
 import { debounce } from 'lodash'
+import { useAuth } from '@/stores/useAuth'
 import ProblemDescription from '@/components/ProblemDescription.vue'
 import PairChat from '@/components/PairChat.vue'
 
@@ -84,6 +86,7 @@ export default defineComponent({
 
     setup() {
         const route = useRoute()
+        const auth = useAuth()
         const roomId = String(route.params.roomId)
         const code = ref('print("Hello")')
         const output = ref('')
@@ -158,7 +161,9 @@ export default defineComponent({
                             const isWidget = decoration.spec.widget instanceof RemoteCursorWidget
                             const widgetUserId = isWidget ? decoration.spec.widget.userId : null
                             
-                            const isThisUserSelection = className.includes(`remote-selection-${userId}`)
+                            // Check if this decoration belongs to this user
+                            const userColorInfo = generateUserColor(userId, true) // true = remote user
+                            const isThisUserSelection = className.includes(`remote-selection-${userColorInfo.classIndex}`)
                             const isThisUserCursor = isWidget && widgetUserId === userId
                             
                             if (!isThisUserSelection && !isThisUserCursor) {
@@ -184,7 +189,7 @@ export default defineComponent({
                             
                             const userColorInfo = classIndex !== undefined ? 
                                 { classIndex } : 
-                                generateUserColor(userId)
+                                generateUserColor(userId, true) // true = remote user
                             
                             const selectionDecoration = Decoration.mark({
                                 class: `remote-selection-${userColorInfo.classIndex}`,
@@ -216,7 +221,9 @@ export default defineComponent({
                                 const isWidget = decoration.spec.widget instanceof RemoteCursorWidget
                                 const widgetUserId = isWidget ? decoration.spec.widget.userId : null
                                 
-                                const isThisUserSelection = className.includes(`remote-selection-${userId}`)
+                                // Check if this decoration belongs to this user
+                                const userColorInfo = generateUserColor(userId, true) // true = remote user
+                                const isThisUserSelection = className.includes(`remote-selection-${userColorInfo.classIndex}`)
                                 const isThisUserCursor = isWidget && widgetUserId === userId
                                 
                                 return !isThisUserSelection && !isThisUserCursor
@@ -292,17 +299,20 @@ export default defineComponent({
             }
         }, 200)
 
-        // Generate consistent color and class index for user
-        const generateUserColor = (userId) => {
-            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8']
-            const hash = userId.split('').reduce((a, b) => {
-                a = ((a << 5) - a) + b.charCodeAt(0)
-                return a & a
-            }, 0)
-            const index = Math.abs(hash) % colors.length
-            return {
-                color: colors[index],
-                classIndex: index
+        // Generate simple color for user - just "me" vs "other"
+        const generateUserColor = (userId, isRemote = false) => {
+            // If it's a remote selection/cursor, it's always "other"
+            // If it's local, it's always "me"
+            if (isRemote) {
+                return {
+                    color: '#ef4444',
+                    classIndex: 'other'
+                }
+            } else {
+                return {
+                    color: '#4f46e5',
+                    classIndex: 'me'
+                }
             }
         }
 
@@ -310,7 +320,7 @@ export default defineComponent({
         const broadcastSelection = debounce(() => {
             if (view.value && !isReadOnly.value) {
                 const selection = view.value.state.selection.main
-                const userColor = generateUserColor(socket.id)
+                const userColor = generateUserColor(socket.id, false) // false = not remote, it's me
                 if (selection.from !== selection.to) { // Only broadcast if there's an actual selection
                     console.log('Broadcasting selection:', selection.from, 'to', selection.to)
                     socket.emit('selection', {
@@ -350,14 +360,14 @@ export default defineComponent({
                         console.log('Adding remote selection decoration from', data.from, 'to', data.to)
                         const userColor = data.classIndex !== undefined ? 
                             { classIndex: data.classIndex } : 
-                            generateUserColor(data.userId)
+                            generateUserColor(data.userId, true) // true = remote, it's other
                         
                         view.value.dispatch({
                             effects: [setRemoteCursor.of({
                                 userId: data.userId,
                                 from: data.from,
                                 to: data.to,
-                                color: data.color || generateUserColor(data.userId).color,
+                                color: data.color || generateUserColor(data.userId, true).color, // true = remote
                                 classIndex: userColor.classIndex
                             })]
                         })
@@ -513,7 +523,8 @@ export default defineComponent({
             roomId,
             socket,
             currentUserId,
-            onProblemChanged
+            onProblemChanged,
+            auth
         }
     }
 })
@@ -691,21 +702,22 @@ input:checked + .slider:before {
     line-height: 1.5;
 }
 
-/* Remote selection styling - user-specific colors */
+/* Remote selection styling - simplified for pair programming */
 [class*="remote-selection-"] {
     border-radius: 3px;
     border: 1px solid rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(1px);
 }
 
-/* Individual user selection colors */
-.remote-selection-0 { background-color: rgba(255, 107, 107, 0.3) !important; border-color: rgba(255, 107, 107, 0.5); }
-.remote-selection-1 { background-color: rgba(78, 205, 196, 0.3) !important; border-color: rgba(78, 205, 196, 0.5); }
-.remote-selection-2 { background-color: rgba(69, 183, 209, 0.3) !important; border-color: rgba(69, 183, 209, 0.5); }
-.remote-selection-3 { background-color: rgba(150, 206, 180, 0.3) !important; border-color: rgba(150, 206, 180, 0.5); }
-.remote-selection-4 { background-color: rgba(255, 234, 167, 0.3) !important; border-color: rgba(255, 234, 167, 0.5); }
-.remote-selection-5 { background-color: rgba(221, 160, 221, 0.3) !important; border-color: rgba(221, 160, 221, 0.5); }
-.remote-selection-6 { background-color: rgba(152, 216, 200, 0.3) !important; border-color: rgba(152, 216, 200, 0.5); }
+/* Two-user selection colors for pair programming */
+.remote-selection-me { 
+    background-color: rgba(79, 70, 229, 0.3) !important; 
+    border-color: rgba(79, 70, 229, 0.5); 
+}
+.remote-selection-other { 
+    background-color: rgba(239, 68, 68, 0.3) !important; 
+    border-color: rgba(239, 68, 68, 0.5); 
+}
 
 /* Dynamic user-specific selections based on socket ID hash */
 :deep(.cm-editor) [class*="remote-selection-"] {

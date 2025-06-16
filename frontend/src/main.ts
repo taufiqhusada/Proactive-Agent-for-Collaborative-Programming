@@ -10,6 +10,7 @@ import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
+import { useAuth } from './stores/useAuth'
 
 // import { loader } from '@guolao/vue-monaco-editor'
 // loader.config({
@@ -28,5 +29,9 @@ setActivePinia(pinia)
 app.use(pinia)
 // now you can install router, i18n, etc., all of which may use stores
 app.use(router)
+
+// Initialize auth store
+const auth = useAuth()
+auth.initialize()
 
 app.mount('#app')
