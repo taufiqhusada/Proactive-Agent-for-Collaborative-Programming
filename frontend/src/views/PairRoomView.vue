@@ -48,6 +48,7 @@
 
             <!-- Right Panel: Chat -->
             <div class="right-panel">
+                <AIAgentStatus />
                 <PairChat 
                     :socket="socket" 
                     :room-id="roomId" 
@@ -76,12 +77,14 @@ import { debounce } from 'lodash'
 import { useAuth } from '@/stores/useAuth'
 import ProblemDescription from '@/components/ProblemDescription.vue'
 import PairChat from '@/components/PairChat.vue'
+import AIAgentStatus from '@/components/AIAgentStatus.vue'
 
 export default defineComponent({
     components: {
         Codemirror,
         ProblemDescription,
         PairChat,
+        AIAgentStatus,
     },
 
     setup() {
@@ -97,6 +100,7 @@ export default defineComponent({
         const isReadOnly = ref(false)
         const isLocalUpdate = ref(false)
         const currentUserId = ref('')
+        const currentProblem = ref(null)
         const { socket, connect } = useSocket()
 
         const languages = {
@@ -279,8 +283,32 @@ export default defineComponent({
             output.value = res.stderr || res.stdout || 'no output'
         }
 
+        const sendProblemToBackend = (problem) => {
+            if (!problem) return
+            
+            socket.emit('problem_update', {
+                room: roomId,
+                problemTitle: problem.title,
+                problemDescription: problem.description + 
+                    (problem.examples ? '\n\nExamples:\n' + 
+                    problem.examples.map((ex, i) => 
+                        `Example ${i+1}:\nInput: ${ex.input}\nOutput: ${ex.output}` + 
+                        (ex.explanation ? `\nExplanation: ${ex.explanation}` : '')
+                    ).join('\n\n') : '') +
+                    (problem.constraints ? '\n\nConstraints:\n' + 
+                    problem.constraints.join('\n') : '')
+            })
+        }
+
         const onProblemChanged = (data) => {
             console.log('Problem changed:', data.problem.title)
+            
+            // Store current problem
+            currentProblem.value = data.problem
+            
+            // Send problem description to backend for AI agent
+            sendProblemToBackend(data.problem)
+            
             // You can sync the problem selection across users if needed
             // socket.emit('problem_changed', { room: roomId, problemIndex: data.problemIndex })
         }
@@ -468,6 +496,13 @@ export default defineComponent({
                         isLocalUpdate.value = true
                         code.value = response.code
                     }
+                    
+                    // Send initial problem description to backend after joining
+                    setTimeout(() => {
+                        if (currentProblem.value) {
+                            sendProblemToBackend(currentProblem.value)
+                        }
+                    }, 1000) // Wait 1 second to ensure problem component is mounted
                 })
             })
 
@@ -532,7 +567,7 @@ export default defineComponent({
 
 <style scoped>
 .editor-container {
-    min-height: 100vh;
+    height: 100vh;
     background: #f8fafc;
     display: flex;
     flex-direction: column;
@@ -692,12 +727,15 @@ input:checked + .slider:before {
 }
 
 .right-panel {
-    width: 300px;
+    width: 500px;
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
 
 .code-editor {
-    height: calc(100vh - 120px);
+    height: 100%;
     font-size: 14px;
     line-height: 1.5;
 }
@@ -794,7 +832,7 @@ input:checked + .slider:before {
     }
     
     .code-editor {
-        height: 400px;
+        height: 500px;
     }
 }
 </style>

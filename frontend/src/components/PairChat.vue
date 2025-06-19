@@ -13,10 +13,20 @@
         <div class="chat-messages" ref="messagesContainer">
             <div v-for="message in messages" :key="message.id" class="message-wrapper">
                 <div 
-                    :class="['message', { 'own-message': message.userId === currentUserId }]"
+                    :class="[
+                        'message', 
+                        { 
+                            'own-message': message.userId === currentUserId,
+                            'ai-message': message.isAI,
+                            'system-message': message.isSystem
+                        }
+                    ]"
                 >
                     <div class="message-header">
-                        <span class="username">{{ message.username }}</span>
+                        <span class="username">
+                            <span v-if="message.isAI" class="ai-badge">🤖</span>
+                            {{ message.username }}
+                        </span>
                         <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
                     </div>
                     <div class="message-content">{{ message.content }}</div>
@@ -60,13 +70,47 @@
                         <div class="tooltip-arrow"></div>
                     </div>
                 </button>
+                <button 
+                    @click="toggleAIVoice" 
+                    :class="['ai-voice-button', { active: aiVoiceEnabled, speaking: isSpeaking }]"
+                    :disabled="!isConnected || !ttsSupported"
+                    :title="ttsSupported ? (aiVoiceEnabled ? 'AI voice enabled - Click to mute' : 'AI voice muted - Click to enable') : 'Text-to-speech not supported'"
+                >
+                    <svg v-if="aiVoiceEnabled && !isSpeaking" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                    <svg v-else-if="!aiVoiceEnabled" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                        <line x1="23" y1="9" x2="17" y2="15"/>
+                        <line x1="17" y1="9" x2="23" y2="15"/>
+                    </svg>
+                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                        <circle cx="19" cy="12" r="3"/>
+                    </svg>
+                </button>
+                <button 
+                    @click="sendMessage" 
+                    class="send-button"
+                    :disabled="!newMessage.trim() || !isConnected"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+                    </svg>
+                </button>
             </div>
             <div v-if="autoRecordingEnabled" class="voice-feedback">
-                <div class="listening-indicator">
+                <div v-if="!isSpeaking" class="listening-indicator">
                     <span class="mic-icon">🎤</span>
                     <span class="listening-text">Auto-recording active</span>
                 </div>
-                <div v-if="currentAutoTranscript && autoRecordingEnabled" class="auto-transcript">
+                <div v-if="isSpeaking" class="ai-speaking-indicator">
+                    <span class="ai-icon">🤖</span>
+                    <span class="ai-text">CodeBot speaking (recording paused)</span>
+                </div>
+                <div v-if="currentAutoTranscript && autoRecordingEnabled && !isSpeaking" class="auto-transcript">
                     <strong>Voice:</strong> "{{ currentAutoTranscript }}"
                 </div>
                 <div v-if="isProcessingSpeech" class="processing-indicator">
@@ -125,6 +169,12 @@ export default defineComponent({
         let autoRecognition = null
         let speechProcessor = null
 
+        // Text-to-Speech state
+        const ttsSupported = ref(false)
+        const isSpeaking = ref(false)
+        const aiVoiceEnabled = ref(true) // Can be toggled by user
+        let currentUtterance = null
+
         const formatTime = (timestamp) => {
             const date = new Date(timestamp)
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -169,7 +219,22 @@ export default defineComponent({
             if (message.userId === props.currentUserId) return
             
             messages.value.push(message)
+            
+            // Don't use browser TTS for AI messages with hasAudio flag
+            // The audio will come separately via ai_speech event
+            if (message.isAI && !message.hasAudio && aiVoiceEnabled.value) {
+                // Fallback to browser TTS only if no server audio is available
+                speakMessage(message.content, true)
+            }
+            
             scrollToBottom()
+        }
+
+        const handleAISpeech = (data) => {
+            // Play high-quality AI speech audio
+            if (aiVoiceEnabled.value && data.audioData) {
+                playAudioFromBase64(data.audioData)
+            }
         }
 
         const handleUserJoined = (data) => {
@@ -464,6 +529,12 @@ export default defineComponent({
         const sendAutoMessage = (transcript, userId) => {
             if (!transcript.trim()) return
             
+            // CRITICAL: Don't send voice messages while AI is speaking to prevent feedback
+            if (isSpeaking.value) {
+                console.log('🚫 Blocked voice message while AI is speaking:', transcript)
+                return
+            }
+            
             const message = {
                 id: Date.now() + Math.random(),
                 content: transcript.trim(),
@@ -534,16 +605,121 @@ export default defineComponent({
             }
         }
 
-        const toggleVoiceInput = () => {
-            // Removed - now using only auto-recording
+        // Text-to-Speech functions (OpenAI TTS)
+        const initTextToSpeech = () => {
+            // Check if Web Audio API is supported for high-quality audio playback
+            if ('AudioContext' in window || 'webkitAudioContext' in window) {
+                ttsSupported.value = true
+                console.log('High-quality audio playback supported')
+            } else {
+                ttsSupported.value = false
+                console.log('High-quality audio playback not supported')
+            }
         }
 
-        const startVoiceInput = () => {
-            // Removed - now using only auto-recording
+        const playAudioFromBase64 = async (base64Audio) => {
+            if (!ttsSupported.value || !aiVoiceEnabled.value) return
+            
+            try {
+                // Stop any current speech
+                stopSpeaking()
+                
+                // CRITICAL: Pause voice recording while AI is speaking to prevent feedback loop
+                const wasAutoRecordingActive = autoRecordingEnabled.value
+                if (wasAutoRecordingActive) {
+                    console.log('🔇 Temporarily pausing voice recording to prevent AI feedback')
+                    stopAutoRecording()
+                }
+                
+                // Convert base64 to blob
+                const audioBytes = atob(base64Audio)
+                const audioArray = new Uint8Array(audioBytes.length)
+                for (let i = 0; i < audioBytes.length; i++) {
+                    audioArray[i] = audioBytes.charCodeAt(i)
+                }
+                
+                const audioBlob = new Blob([audioArray], { type: 'audio/mpeg' })
+                const audioUrl = URL.createObjectURL(audioBlob)
+                
+                // Create and play audio element
+                const audio = new Audio(audioUrl)
+                audio.volume = 0.8
+                
+                audio.onloadstart = () => {
+                    isSpeaking.value = true
+                    console.log('🔊 Started playing AI speech (voice recording paused)')
+                }
+                
+                audio.onended = () => {
+                    isSpeaking.value = false
+                    currentUtterance = null
+                    URL.revokeObjectURL(audioUrl)
+                    console.log('✅ Finished playing AI speech')
+                    
+                    // Resume voice recording after AI finishes speaking (with delay)
+                    if (wasAutoRecordingActive) {
+                        setTimeout(() => {
+                            console.log('🎤 Resuming voice recording after AI speech')
+                            startAutoRecording()
+                        }, 500) // 500ms delay to ensure audio has fully stopped
+                    }
+                }
+                
+                audio.onerror = (error) => {
+                    console.error('Audio playback error:', error)
+                    isSpeaking.value = false
+                    currentUtterance = null
+                    URL.revokeObjectURL(audioUrl)
+                    
+                    // Resume voice recording even if audio failed
+                    if (wasAutoRecordingActive) {
+                        setTimeout(() => {
+                            console.log('🎤 Resuming voice recording after AI audio error')
+                            startAutoRecording()
+                        }, 500)
+                    }
+                }
+                
+                currentUtterance = audio
+                await audio.play()
+                
+            } catch (error) {
+                console.error('Error playing audio:', error)
+                isSpeaking.value = false
+                currentUtterance = null
+            }
         }
 
-        const stopVoiceInput = () => {
-            // Cleanup function for compatibility
+        const speakMessage = async (text, isAI = false) => {
+            // This function is now mainly for fallback or non-AI messages
+            // AI messages will use the high-quality audio from the server
+            if (!isAI) {
+                // For non-AI messages, we can still use browser TTS if needed
+                if ('speechSynthesis' in window && text.trim()) {
+                    const utterance = new SpeechSynthesisUtterance(text)
+                    utterance.rate = 1.0
+                    utterance.pitch = 1.0
+                    utterance.volume = 0.6
+                    speechSynthesis.speak(utterance)
+                }
+            }
+            // AI messages will be handled by playAudioFromBase64
+        }
+
+        const stopSpeaking = () => {
+            if (speechSynthesis.speaking) {
+                speechSynthesis.cancel()
+                isSpeaking.value = false
+                currentUtterance = null
+            }
+        }
+
+        const toggleAIVoice = () => {
+            aiVoiceEnabled.value = !aiVoiceEnabled.value
+            if (!aiVoiceEnabled.value) {
+                stopSpeaking()
+            }
+            console.log('AI voice', aiVoiceEnabled.value ? 'enabled' : 'disabled')
         }
 
         onMounted(() => {
@@ -554,6 +730,9 @@ export default defineComponent({
             
             // Initialize speech recognition
             initSpeechRecognition()
+            
+            // Initialize text-to-speech
+            initTextToSpeech()
             
             // Show invitation tooltip immediately if not previously dismissed
             setTimeout(() => {
@@ -605,6 +784,11 @@ export default defineComponent({
                     console.log('User disconnected:', data)
                     handleUserCountUpdate(data)
                 })
+
+                props.socket.on('ai_speech', (data) => {
+                    console.log('Received AI speech:', data)
+                    handleAISpeech(data)
+                })
             }
         })
 
@@ -624,6 +808,7 @@ export default defineComponent({
                 props.socket.off('user_left', handleUserLeft)
                 props.socket.off('user_count_update', handleUserCountUpdate)
                 props.socket.off('user_disconnected', handleUserCountUpdate)
+                props.socket.off('ai_speech', handleAISpeech)
             }
         })
 
@@ -640,9 +825,13 @@ export default defineComponent({
             speechQueue,
             currentAutoTranscript,
             showInviteTooltip,
+            ttsSupported,
+            isSpeaking,
+            aiVoiceEnabled,
             formatTime,
             sendMessage,
             toggleAutoRecording,
+            toggleAIVoice,
             dismissTooltip
         }
     }
@@ -653,11 +842,12 @@ export default defineComponent({
 .pair-chat {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
     background: white;
     border-radius: 12px;
     border: 1px solid #e2e8f0;
     overflow: hidden;
+    min-height: 0;
 }
 
 .chat-header {
@@ -721,6 +911,24 @@ export default defineComponent({
     align-self: flex-end;
 }
 
+.message.ai-message {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    align-self: flex-start;
+    border-left: 4px solid #065f46;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+}
+
+.message.system-message {
+    background: #f3f4f6;
+    color: #6b7280;
+    align-self: center;
+    max-width: 90%;
+    text-align: center;
+    font-style: italic;
+    border-radius: 16px;
+}
+
 .message-header {
     display: flex;
     justify-content: space-between;
@@ -733,6 +941,11 @@ export default defineComponent({
     font-size: 0.75rem;
     font-weight: 600;
     opacity: 0.8;
+}
+
+.ai-badge {
+    margin-right: 0.25rem;
+    font-size: 0.875rem;
 }
 
 .timestamp {
@@ -850,6 +1063,56 @@ export default defineComponent({
 }
 
 .auto-record-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #f1f5f9;
+}
+
+/* AI Voice button styles */
+.ai-voice-button {
+    padding: 0.75rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4b5563;
+}
+
+.ai-voice-button:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #3b82f6;
+    color: #3b82f6;
+}
+
+.ai-voice-button.active {
+    background: white;
+    border-color: #3b82f6;
+    color: #3b82f6;
+}
+
+.ai-voice-button.speaking {
+    background: white;
+    border-color: #10b981;
+    color: #10b981;
+    animation: speaking-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes speaking-pulse {
+    from {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+
+.ai-voice-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     background: #f1f5f9;
@@ -1048,5 +1311,35 @@ export default defineComponent({
 
 .chat-messages::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
+}
+
+.ai-speaking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: #10b981;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.ai-icon {
+    font-size: 1rem;
+    animation: speaking-pulse 1s infinite alternate;
+}
+
+.ai-text {
+    color: #10b981;
+}
+
+@keyframes speaking-pulse {
+    from {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1.1);
+    }
 }
 </style>

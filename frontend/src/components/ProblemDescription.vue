@@ -54,7 +54,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed } from 'vue'
+import { defineComponent, ref, computed, onMounted } from 'vue'
 
 export default defineComponent({
     name: 'ProblemDescription',
@@ -198,6 +198,11 @@ export default defineComponent({
             })
         }
 
+        // Emit initial problem on mount
+        onMounted(() => {
+            onProblemChange()
+        })
+
         return {
             selectedProblem,
             problems,
@@ -276,7 +281,7 @@ export default defineComponent({
 
 .problem-content {
     padding: 1.5rem;
-    max-height: 680px;
+    max-height: 650px;
     overflow-y: auto;
 }
 

@@ -4,11 +4,13 @@ app.py - Backend for remote pair programming
 
 import os
 import subprocess
+import threading
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
+from services.ai_agent import init_ai_agent, get_ai_agent
 
 load_dotenv()
 
@@ -19,8 +21,8 @@ CORS(app, supports_credentials=True)
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
-    logger=True,
-    engineio_logger=True,
+    logger=False,
+    engineio_logger=False,
     async_mode='threading'
 )
 jwt = JWTManager(app)
@@ -48,6 +50,9 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Initialize AI Agent
+ai_agent = init_ai_agent(socketio)
+
 # WebSocket handlers
 @socketio.on("connect", namespace="/ws")
 def ws_connect():
@@ -63,6 +68,10 @@ def ws_join(data):
     room_state = manager.get_room_state(room)
     current_user_count = len(manager.rooms.get(room, set()))
     print(f"Client {request.sid} joined room {room}, sending state. Users in room: {current_user_count}")
+    
+    # AI agent joins the room when first user joins
+    if current_user_count == 1:
+        ai_agent.join_room(room)
     
     # Notify ALL users (including self) about the updated user count
     emit("user_count_update", {
@@ -112,6 +121,9 @@ def ws_update(data):
     # Store the updated code in room state
     manager.set_room_state(room, delta)
     
+    # Update AI agent with new code context
+    ai_agent.handle_code_update(room, delta, "python")
+    
     # Broadcast to all other clients in the room
     emit("update", {"delta": delta, "sourceId": source_id}, room=room, include_self=False)
 
@@ -140,13 +152,38 @@ def ws_selection(data):
 @socketio.on("chat_message", namespace="/ws")
 def ws_chat_message(data):
     """
-    Forward chat messages to everyone else in the room.
+    Forward chat messages to everyone else in the room and process with AI agent.
     """
     print(f"WS chat message from {request.sid} in room {data['room']}")
     room = data["room"]
     
     # Broadcast chat message to all other clients in the room
     emit("chat_message", data, room=room, include_self=False)
+    
+    # Process message with AI agent in a separate thread
+    def process_ai_message():
+        ai_agent.process_message_sync(data)
+    
+    threading.Thread(target=process_ai_message, daemon=True).start()
+
+@socketio.on("problem_update", namespace="/ws")
+def ws_problem_update(data):
+    """
+    Handle problem description updates and notify AI agent.
+    """
+    print(f"Problem update from {request.sid} in room {data['room']}")
+    room = data["room"]
+    problem_title = data.get("problemTitle", "")
+    problem_description = data.get("problemDescription", "")
+    
+    # Update AI agent with new problem context
+    ai_agent.handle_problem_update(room, problem_title, problem_description)
+    
+    # Optionally broadcast to other clients in the room
+    emit("problem_update", {
+        "problemTitle": problem_title,
+        "problemDescription": problem_description
+    }, room=room, include_self=False)
 
 @socketio.on("disconnect", namespace="/ws")
 def ws_disconnect():
@@ -198,4 +235,4 @@ def run_code():
     return jsonify(stdout=proc.stdout, stderr=proc.stderr)
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
