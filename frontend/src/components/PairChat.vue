@@ -605,6 +605,16 @@ export default defineComponent({
             }
         }
 
+        const stopVoiceInput = () => {
+            if (autoRecognition) {
+                try {
+                    autoRecognition.stop()
+                } catch (error) {
+                    console.error('Error stopping voice input:', error)
+                }
+            }
+        }
+
         // Text-to-Speech functions (OpenAI TTS)
         const initTextToSpeech = () => {
             // Check if Web Audio API is supported for high-quality audio playback
@@ -1118,7 +1128,6 @@ export default defineComponent({
     background: #f1f5f9;
 }
 
-/* Invitation tooltip styles */
 .invite-tooltip {
     position: absolute;
     bottom: 100%;

@@ -65,6 +65,8 @@ class AIAgent:
             "speed": 1.1       # 0.25 to 4.0
         }
         
+
+        
     def add_message_to_context(self, message_data: Dict[str, Any]):
         """Add a new message to the conversation context"""
         room_id = message_data.get('room')
@@ -121,7 +123,6 @@ class AIAgent:
         context = self.conversation_history[room_id]
         context.problem_title = problem_title
         context.problem_description = problem_description
-        print(f"Updated problem context for room {room_id}: {problem_title}")
 
     def should_respond(self, room_id: str) -> bool:
         """Determine if the AI should respond based on various factors"""
@@ -190,61 +191,43 @@ class AIAgent:
         conversation_text = ""
         for msg in context.messages[-5:]:  # Last 5 messages
             conversation_text += f"{msg.username}: {msg.content}\n"
-            
 
-        # Create the system prompt
-        system_prompt = f"""You are CodeBot, an AI pair programming assistant. You're working with a team of programmers who are collaborating on code.
+        # Create the system prompt (optimized for speed)
+        system_prompt = f"""You are CodeBot, an AI pair programming assistant.
 
-                            Current programming problem: {context.problem_title if context.problem_title else "No specific problem"}
-                            Problem description: {context.problem_description if context.problem_description else "No problem description available"}
+                        Problem: {context.problem_title or "General coding"}
+                        Description: {context.problem_description[:200] if context.problem_description else "None"}
+                        Language: {context.programming_language}
+                        Code: {context.code_context[:300] if context.code_context else "None"}
 
-                            Current programming language: {context.programming_language}
+                        Recent chat:
+                        {conversation_text}
 
-                            Current code context:
-                            ```{context.programming_language}
-                            {context.code_context[:1000] if context.code_context else "No code context available"}
-                            ```
-
-                            Recent conversation:
-                            {conversation_text}
-
-                            Your role:
-                            1. Help solve the current programming problem
-                            2. Provide helpful programming insights and suggestions
-                            3. Answer questions about code, debugging, or programming concepts
-                            4. Suggest improvements or alternative approaches
-                            4. Help resolve errors or issues
-                            5. Be concise but helpful (keep responses under 70 words maximum)
-                            6. Be encouraging and collaborative
-                            7. Only respond when you can add genuine value to the conversation
-
-                            Respond naturally as if you're a helpful teammate who has been listening to the conversation. Keep your response very brief and focused. If the conversation doesn't warrant a technical response, you can also provide encouragement or ask clarifying questions.
-                            """
+                        Rules: Be helpful, concise (max 70 words), respond only when valuable. Skip with 'SKIP_RESPONSE' if not needed."""
 
         try:
+            # print(system_prompt)
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Based on the recent conversation, provide a helpful response as CodeBot in 70 words or less. If the conversation doesn't need a technical response, you can skip responding by saying 'SKIP_RESPONSE'."}
+                    {"role": "user", "content": f"Respond in 70 words max or say 'SKIP_RESPONSE'."}
                 ],
                 max_tokens=80,  # Reduced to ensure ~70 words max
                 temperature=0.7
             )
             
-            print(system_prompt)
             ai_response = response.choices[0].message.content.strip()
-            print(ai_response)
             
             # Check if AI decided not to respond
             if ai_response == "SKIP_RESPONSE" or not ai_response:
+                print("⚠️  AI chose not to respond")
                 return None
             
             # Ensure response doesn't exceed 70 words
             words = ai_response.split()
             if len(words) > 70:
                 ai_response = ' '.join(words[:70]) + "..."
-                print(f"Truncated response to 70 words: {ai_response}")
                 
             return ai_response
             
@@ -277,10 +260,7 @@ class AIAgent:
             return None
 
     async def send_ai_message_with_audio(self, room_id: str, content: str):
-        """Send an AI message to the chat room with optional audio"""
-        # Generate audio asynchronously
-        audio_data = await self.generate_speech(content)
-        
+        """Send an AI message to the chat room with optional audio - optimized for speed"""
         message = {
             'id': f"ai_{int(time.time() * 1000)}",
             'content': content,
@@ -289,29 +269,41 @@ class AIAgent:
             'timestamp': datetime.now().isoformat(),
             'room': room_id,
             'isAI': True,
-            'hasAudio': audio_data is not None
+            'hasAudio': False  # Will be updated if audio is generated
         }
         
         # Update last response time
         if room_id in self.conversation_history:
             self.conversation_history[room_id].last_ai_response = datetime.now()
-            
-        # Emit the message to the room
+        
+        # Send message immediately (don't wait for audio)
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
         
-        # If audio was generated, send it separately
-        if audio_data:
-            # Convert audio bytes to base64 for transmission
-            import base64
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-            
-            self.socketio.emit('ai_speech', {
-                'messageId': message['id'],
-                'audioData': audio_base64,
-                'room': room_id
-            }, room=room_id, namespace='/ws')
+        # Generate audio in parallel (non-blocking)
+        def generate_and_send_audio():
+            try:
+                # Run the async audio generation in a new event loop
+                async def audio_task():
+                    audio_data = await self.generate_speech(content)
+                    if audio_data:
+                        import base64
+                        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+                        self.socketio.emit('ai_speech', {
+                            'messageId': message['id'],
+                            'audioData': audio_base64,
+                            'room': room_id
+                        }, room=room_id, namespace='/ws')
+                
+                # Create and run new event loop for audio generation
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(audio_task())
+                loop.close()
+            except Exception:
+                pass  # Fail silently for audio to not block text response
         
-        print(f"AI Agent sent message to room {room_id}: {content} (audio: {'yes' if audio_data else 'no'})")
+        # Start audio generation in a separate thread
+        threading.Thread(target=generate_and_send_audio, daemon=True).start()
     
     def send_ai_message_text_only(self, room_id: str, content: str):
         """Send an AI message to the chat room without audio"""
@@ -332,45 +324,24 @@ class AIAgent:
             
         # Emit the message to the room (no audio)
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
-        print(f"AI Agent sent text-only message to room {room_id}: {content}")
     
     def send_ai_message(self, room_id: str, content: str):
-        """Send an AI message to the chat room (sync version for backward compatibility)"""
+        """Send an AI message to the chat room (optimized sync version)"""
         try:
-            # Check if we're already in an event loop
+            # Try to use existing event loop if available
             try:
                 loop = asyncio.get_running_loop()
-                # If we're already in an event loop, schedule the coroutine
                 asyncio.create_task(self.send_ai_message_with_audio(room_id, content))
                 return
             except RuntimeError:
-                # No running loop, create a new one
-                pass
-            
-            # Create new event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.send_ai_message_with_audio(room_id, content))
-            loop.close()
+                # No running loop - use thread pool to avoid blocking
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.send_ai_message_with_audio(room_id, content))
+                    return
         except Exception as e:
-            print(f"Error sending AI message with audio: {e}")
-            # Fallback to text-only message
-            message = {
-                'id': f"ai_{int(time.time() * 1000)}",
-                'content': content,
-                'username': self.agent_name,
-                'userId': self.agent_id,
-                'timestamp': datetime.now().isoformat(),
-                'room': room_id,
-                'isAI': True,
-                'hasAudio': False
-            }
-            
-            if room_id in self.conversation_history:
-                self.conversation_history[room_id].last_ai_response = datetime.now()
-                
-            self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
-            print(f"AI Agent sent text-only message to room {room_id}: {content}")
+            # Fallback to simple text-only message
+            self.send_ai_message_text_only(room_id, content)
         
     async def process_message(self, message_data: Dict[str, Any]):
         """Process a new message and potentially respond"""
@@ -384,10 +355,9 @@ class AIAgent:
 
         # Check if we should respond
         if self.should_respond(room_id):
-            print(f"AI should respond in room {room_id}, generating response...")
+            print("AI will respond to the message")
             # Generate response asynchronously
             response = await self.generate_response(room_id)
-            print(f"Generated response for room {room_id}: {response}")
             
             if response:
                 # Send the response using async version
@@ -403,6 +373,7 @@ class AIAgent:
             loop.close()
         except Exception as e:
             print(f"Error processing message in AI agent: {e}")
+            # Continue processing other messages
             
     def handle_code_update(self, room_id: str, code: str, language: str = "python"):
         """Handle code updates from the editor"""
@@ -427,12 +398,12 @@ class AIAgent:
         import random
         greeting = random.choice(greeting_messages)
         
-        # Send greeting after a short delay
+        # Send greeting after a short delay (non-blocking)
         def send_greeting():
             time.sleep(2)  # Wait 2 seconds before greeting
-            # Use text-only method for greeting to avoid audio on first message
             self.send_ai_message_text_only(room_id, greeting)
             
+        # Start greeting in a separate thread to avoid blocking
         threading.Thread(target=send_greeting, daemon=True).start()
 
     def set_voice_config(self, voice: str = None, model: str = None, speed: float = None):
@@ -443,8 +414,6 @@ class AIAgent:
             self.voice_config["model"] = model
         if speed and 0.25 <= speed <= 4.0:
             self.voice_config["speed"] = speed
-        
-        print(f"Voice config updated: {self.voice_config}")
 
 # Global AI agent instance
 ai_agent = None

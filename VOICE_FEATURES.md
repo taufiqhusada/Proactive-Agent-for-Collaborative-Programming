@@ -1,25 +1,12 @@
 # 🎤 AI Voice Features Guide
 
 ## Overview
-CodeBot now features **high-quality, natural-soun### Performance Optimizations
+CodeBot features **high-quality voice responses** using OpenAI's advanced text-to-speech API. Experience natural-sounding AI assistance with optional voice output!
 
-### Efficient Audio Delivery
-- **Streaming**: Audio generated and streamed in real-time
-- **Compression**: MP3 format for optimal file size
-- **Caching**: Browser caches audio for smooth playback
-- **Concise Responses**: AI responses limited to 70 words max for quick audio generation
-
-### Network Optimization
-- **Base64 Encoding**: Efficient over WebSocket
-- **Concurrent Processing**: Audio generation doesn't block chat
-- **Fallback Support**: Graceful degradation if TTS fails powered by OpenAI's advanced Text-to-Speech (TTS) technology. Say goodbye to robotic browser voices!
-
-## 🆕 What's New
-
-### ✨ **Premium Voice Quality**
+## ✨ **Premium Voice Quality**
 - **OpenAI TTS**: Uses OpenAI's `tts-1` model for fast, natural speech
 - **Voice Options**: Choose from 6 distinct voices (nova, alloy, echo, fable, onyx, shimmer)
-- **Optimized Performance**: Efficient audio streaming and caching
+- **Optimized Performance**: Efficient audio streaming and parallel processing
 - **Natural Conversation**: Human-like intonation and pacing
 
 ### 🎛️ **Voice Controls**
