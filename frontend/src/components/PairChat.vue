@@ -175,6 +175,14 @@ export default defineComponent({
         const aiVoiceEnabled = ref(true) // Can be toggled by user
         let currentUtterance = null
 
+        // PCM Audio Context for real-time streaming
+        let audioContext = null
+        let currentAudioSource = null
+        let pcmSampleRate = 24000 // OpenAI's PCM format is 24kHz, not 16kHz
+        let pcmChannels = 1 // Mono audio
+        let pcmBitsPerSample = 16 // 16-bit PCM
+        let audioPlaybackTime = 0 // Track when to schedule next audio chunk
+
         const formatTime = (timestamp) => {
             const date = new Date(timestamp)
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -231,10 +239,272 @@ export default defineComponent({
         }
 
         const handleAISpeech = (data) => {
-            // Play high-quality AI speech audio
+            // Play high-quality AI speech audio (legacy single-chunk method)
             if (aiVoiceEnabled.value && data.audioData) {
                 playAudioFromBase64(data.audioData)
             }
+        }
+
+        // Streaming audio state management
+        const streamingAudioChunks = ref(new Map()) // messageId -> { chunks: [], totalChunks: 0 }
+        const activeAudioStreams = ref(new Set()) // Set of messageIds being streamed
+
+        const handleAudioStreamStart = (data) => {
+            if (!aiVoiceEnabled.value) return
+            
+            const { messageId } = data
+            console.log(`🎵 Starting audio stream for message ${messageId}`)
+            
+            // CRITICAL: Stop all voice recording immediately to prevent feedback
+            const wasAutoRecordingActive = autoRecordingEnabled.value
+            if (wasAutoRecordingActive) {
+                console.log('🔇 IMMEDIATELY stopping voice recording for AI audio stream')
+                stopAutoRecording()
+                
+                // FORCE DISABLE auto recording temporarily to prevent restart
+                // We'll re-enable it when streaming completes
+                autoRecordingEnabled.value = false
+                console.log('🔒 Temporarily disabled auto recording to prevent restart during AI streaming')
+            }
+            
+            // Set speaking state immediately to block any voice input
+            isSpeaking.value = true
+            
+            // Clear any pending speech from the queue to prevent interference
+            if (speechQueue.value.length > 0) {
+                console.log(`🗑️ Clearing ${speechQueue.value.length} queued speech items - AI is speaking`)
+                speechQueue.value = []
+                currentAutoTranscript.value = ''
+            }
+            
+            // Initialize streaming state
+            streamingAudioChunks.value.set(messageId, {
+                chunks: [],
+                totalChunks: 0,
+                audioBuffers: [],
+                wasAutoRecordingActive: wasAutoRecordingActive
+            })
+            activeAudioStreams.value.add(messageId)
+            
+            // Reset audio playback timing for smooth streaming
+            audioPlaybackTime = 0
+        }
+
+        const handleAudioChunk = async (data) => {
+            if (!aiVoiceEnabled.value) return
+            
+            const { messageId, audioData, chunkNumber, isRealtime, format, isComplete, isFinalMarker } = data
+            const streamData = streamingAudioChunks.value.get(messageId)
+            
+            if (!streamData) {
+                console.warn(`Received audio chunk for unknown stream: ${messageId}`)
+                return
+            }
+            
+            try {
+                // Handle final marker (empty chunk that just tells us which was the last real chunk)
+                if (isFinalMarker && isComplete) {
+                    console.log(`🏁 Received final chunk marker for ${messageId} - chunk ${chunkNumber} was the last real chunk`)
+                    
+                    // Mark the final chunk number so we know when playback is complete
+                    streamData.finalChunkNumber = chunkNumber
+                    
+                    // Check if that final chunk has already finished playing
+                    if (streamData.completedChunks && streamData.completedChunks.has(chunkNumber)) {
+                        console.log(`🎯 Final chunk ${chunkNumber} already completed - triggering cleanup`)
+                        setTimeout(() => {
+                            cleanupAudioStream(messageId)
+                        }, 100)
+                    }
+                    return // Don't process this as a real audio chunk
+                }
+                
+                // Process real audio chunks
+                if (audioData) {
+                    // Convert base64 to audio buffer
+                    const audioBytes = atob(audioData)
+                    const audioArray = new Uint8Array(audioBytes.length)
+                    for (let i = 0; i < audioBytes.length; i++) {
+                        audioArray[i] = audioBytes.charCodeAt(i)
+                    }
+                    
+                    // Store the chunk
+                    streamData.chunks.push({
+                        number: chunkNumber,
+                        data: audioArray
+                    })
+                    
+                    console.log(`📦 Received chunk ${chunkNumber} for message ${messageId} (${audioArray.length} bytes, format: ${format})`)
+                    
+                    // Real-time PCM playback vs buffered MP3 playback
+                    if (format === 'pcm' && isRealtime) {
+                        // For PCM format, play chunks immediately as they arrive (true streaming)
+                        // We'll determine if it's final when we get the final marker
+                        await playPCMChunk(messageId, audioArray, chunkNumber, false)
+                    } else {
+                        // For MP3 format, wait for all chunks before playing (buffered)
+                        // Note: MP3 chunks cannot be played individually - they need to be combined first
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error processing audio chunk:', error)
+            }
+        }
+
+        const handleAudioStreamComplete = async (data) => {
+            const { messageId, totalChunks, format } = data
+            const streamData = streamingAudioChunks.value.get(messageId)
+            
+            if (!streamData) {
+                console.warn(`Received completion for unknown stream: ${messageId}`)
+                return
+            }
+            
+            console.log(`✅ Audio stream complete for ${messageId}: ${totalChunks} chunks received (format: ${format})`)
+            
+            // For PCM format, chunks are already playing in real-time
+            // The final chunk with isComplete=true will trigger cleanup via Web Audio API events
+            if (format === 'pcm') {
+                console.log(`🎵 PCM real-time streaming complete for ${messageId} - final chunk will trigger cleanup when it finishes playing`)
+                // No cleanup needed here - the final chunk's onended event will handle it
+            } else {
+                // For MP3 format, now combine and play all chunks
+                await playStreamingAudioChunks(messageId)
+            }
+        }
+
+        const playStreamingAudioChunks = async (messageId) => {
+            const streamData = streamingAudioChunks.value.get(messageId)
+            if (!streamData || streamData.playingStarted) return
+            
+            streamData.playingStarted = true
+            
+            try {
+                // Sort chunks by number to ensure correct order
+                const sortedChunks = streamData.chunks.sort((a, b) => a.number - b.number)
+                
+                console.log(`🎵 Combining ${sortedChunks.length} MP3 audio chunks for playback`)
+                
+                // Combine all MP3 audio chunks into a single file
+                const totalLength = sortedChunks.reduce((sum, chunk) => sum + chunk.data.length, 0)
+                const combinedAudio = new Uint8Array(totalLength)
+                
+                let offset = 0
+                for (const chunk of sortedChunks) {
+                    combinedAudio.set(chunk.data, offset)
+                    offset += chunk.data.length
+                }
+                
+                console.log(`🔊 Combined MP3 audio: ${totalLength} bytes, playing now...`)
+                
+                // Create and play audio
+                const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
+                const audioUrl = URL.createObjectURL(audioBlob)
+                const audio = new Audio(audioUrl)
+                
+                audio.volume = 0.8
+                
+                audio.onloadstart = () => {
+                    console.log(`🎶 Started loading streamed MP3 audio for message ${messageId}`)
+                }
+                
+                audio.oncanplay = () => {
+                    console.log(`✅ Streamed MP3 audio ready to play for message ${messageId}`)
+                }
+                
+                audio.onended = () => {
+                    console.log(`🏁 Finished playing streamed MP3 audio for message ${messageId}`)
+                    URL.revokeObjectURL(audioUrl)
+                    cleanupAudioStream(messageId)
+                }
+                
+                audio.onerror = (error) => {
+                    console.error('Streaming MP3 audio playback error:', error)
+                    URL.revokeObjectURL(audioUrl)
+                    cleanupAudioStream(messageId)
+                }
+                
+                await audio.play()
+                console.log(`🔊 Playing ${totalLength} bytes of streamed MP3 audio for message ${messageId}`)
+                
+            } catch (error) {
+                console.error('Error playing streaming MP3 audio:', error)
+                cleanupAudioStream(messageId)
+            }
+        }
+
+        const resumeVoiceRecordingAfterAI = (wasAutoRecordingActive) => {
+            // Check if auto recording should be resumed
+            if (wasAutoRecordingActive && !isSpeaking.value) {
+                setTimeout(() => {
+                    // Double-check the conditions before resuming
+                    if (wasAutoRecordingActive && !isSpeaking.value) {
+                        console.log('🔓 Re-enabling auto recording after AI finished speaking')
+                        autoRecordingEnabled.value = true
+                        
+                        // Small additional delay to ensure everything is settled
+                        setTimeout(() => {
+                            if (autoRecordingEnabled.value && !isSpeaking.value) {
+                                console.log('🎤 Resuming voice recording after AI finished speaking')
+                                startAutoRecording()
+                            }
+                        }, 200)
+                    }
+                }, 500) // 500ms delay to ensure audio has fully stopped
+            }
+        }
+
+        const cleanupAudioStream = (messageId) => {
+            const streamData = streamingAudioChunks.value.get(messageId)
+            
+            // Clean up streaming state
+            streamingAudioChunks.value.delete(messageId)
+            activeAudioStreams.value.delete(messageId)
+            
+            // Reset audio timing for next stream
+            audioPlaybackTime = 0
+            
+            console.log(`🧹 Cleaned up audio stream ${messageId}. Active streams remaining: ${activeAudioStreams.value.size}`)
+            
+            // CRITICAL: Only update speaking state and resume voice recording if NO more streams are active
+            if (activeAudioStreams.value.size === 0) {
+                console.log('🔇 All audio streams complete - AI finished speaking')
+                isSpeaking.value = false
+                
+                // Resume voice recording if it was active, with additional safety checks
+                if (streamData?.wasAutoRecordingActive) {
+                    console.log('📋 Scheduling voice recording resumption after stream cleanup')
+                    resumeVoiceRecordingAfterAI(streamData.wasAutoRecordingActive)
+                }
+            } else {
+                console.log(`🔄 AI still speaking - ${activeAudioStreams.value.size} active streams remaining`)
+            }
+        }
+
+        const handleAudioStreamDone = (data) => {
+            const { messageId, status, format } = data
+            console.log(`🎯 AI audio streaming completely done for ${messageId} with status: ${status}`)
+            
+            // For PCM format, cleanup is now handled by frontend-based completion detection
+            // For MP3 format, we may still need this as a fallback
+            if (format !== 'pcm') {
+                const streamData = streamingAudioChunks.value.get(messageId)
+                if (streamData) {
+                    console.log(`🏁 Backend audio stream done for ${messageId} - cleaning up non-PCM stream`)
+                    cleanupAudioStream(messageId)
+                }
+            } else {
+                console.log(`🎵 PCM stream done signal received for ${messageId} - frontend completion detection will handle cleanup`)
+            }
+        }
+
+        const handleAudioError = (data) => {
+            const { messageId, error } = data
+            console.error(`Audio error for message ${messageId}:`, error)
+            
+            // Clean up on error
+            cleanupAudioStream(messageId)
         }
 
         const handleUserJoined = (data) => {
@@ -322,6 +592,12 @@ export default defineComponent({
             }
             
             recognitionInstance.onresult = (event) => {
+                // CRITICAL: Ignore all speech recognition results while AI is speaking
+                if (isSpeaking.value) {
+                    console.log('🔇 Ignoring speech input while AI is speaking')
+                    return
+                }
+                
                 let interimTranscript = ''
                 
                 // Clear existing silence timer
@@ -351,13 +627,18 @@ export default defineComponent({
                     
                     // Set silence timer for auto mode
                     silenceTimer = setTimeout(() => {
-                        if (finalTranscript.trim()) {
+                        // Double-check speaking state before processing
+                        if (finalTranscript.trim() && !isSpeaking.value) {
                             queueSpeechForProcessing(finalTranscript.trim(), Date.now())
                             finalTranscript = ''
                             // Clear the auto transcript after queuing
                             setTimeout(() => {
                                 currentAutoTranscript.value = ''
                             }, 1000)
+                        } else if (isSpeaking.value) {
+                            console.log('🔇 Discarding queued speech - AI is speaking')
+                            finalTranscript = ''
+                            currentAutoTranscript.value = ''
                         }
                     }, 1000) // 1 second for auto mode
                 }
@@ -371,22 +652,25 @@ export default defineComponent({
                 }
                 
                 console.log('Auto recognition ended')
-                // Restart auto recognition if it's enabled
-                if (autoRecordingEnabled.value) {
+                // Restart auto recognition if it's enabled AND AI is not speaking AND no active streams
+                if (autoRecordingEnabled.value && !isSpeaking.value && activeAudioStreams.value.size === 0) {
                     setTimeout(() => {
-                        if (autoRecordingEnabled.value && !isActive) {
+                        if (autoRecordingEnabled.value && !isActive && !isSpeaking.value && activeAudioStreams.value.size === 0) {
                             try {
                                 recognitionInstance.start()
+                                console.log('🔄 Auto recognition restarted')
                             } catch (error) {
                                 console.log('Auto restart failed, retrying...', error)
                                 setTimeout(() => {
-                                    if (autoRecordingEnabled.value) {
+                                    if (autoRecordingEnabled.value && !isSpeaking.value && activeAudioStreams.value.size === 0) {
                                         startAutoRecording()
                                     }
                                 }, 1000)
                             }
                         }
                     }, 100)
+                } else if (isSpeaking.value || activeAudioStreams.value.size > 0) {
+                    console.log(`🔇 Not restarting voice recognition - AI speaking: ${isSpeaking.value}, Active streams: ${activeAudioStreams.value.size}`)
                 }
             }
             
@@ -429,6 +713,37 @@ export default defineComponent({
         const initSpeechProcessor = () => {
             speechProcessor = setInterval(() => {
                 processSpeechQueue()
+                
+                // Periodic check to ensure voice recording doesn't get stuck
+                // If auto recording is enabled but not active, and AI is not speaking, restart it
+                if (autoRecordingEnabled.value && !isSpeaking.value && activeAudioStreams.value.size === 0 && autoRecognition) {
+                    // Check if recognition is actually running by trying to access its state
+                    // This is a safety mechanism to prevent voice recording from getting permanently disabled
+                    try {
+                        // If we can start it without an InvalidStateError, it means it wasn't running
+                        const testStart = () => {
+                            try {
+                                autoRecognition.start()
+                                console.log('🔄 Restarted stuck voice recognition')
+                            } catch (error) {
+                                if (error.name === 'InvalidStateError') {
+                                    // Already running - this is good
+                                } else {
+                                    console.warn('Voice recognition restart failed:', error)
+                                }
+                            }
+                        }
+                        
+                        // Only check every 10 seconds to avoid spam
+                        const now = Date.now()
+                        if (!window.lastVoiceCheck || now - window.lastVoiceCheck > 10000) {
+                            window.lastVoiceCheck = now
+                            setTimeout(testStart, 100) // Small delay to avoid blocking
+                        }
+                    } catch (error) {
+                        // Ignore errors in the safety check
+                    }
+                }
             }, 500) // Process queue every 500ms
         }
 
@@ -447,6 +762,12 @@ export default defineComponent({
         const processSpeechQueue = () => {
             if (speechQueue.value.length === 0 || isProcessingSpeech.value) return
             
+            // CRITICAL: Don't process speech queue while AI is speaking
+            if (isSpeaking.value) {
+                console.log('🔇 Skipping speech queue processing - AI is speaking')
+                return
+            }
+            
             const now = Date.now()
             const readyItems = speechQueue.value.filter(item => 
                 now - item.timestamp > 100 // Wait 100ms before processing
@@ -460,10 +781,15 @@ export default defineComponent({
             const groups = groupSpeechByUserAndTime(readyItems, 3000)
             
             groups.forEach(group => {
-                // All items in a group are from the same user within the time window
-                const userId = group[0].userId
-                const mergedTranscript = group.map(item => item.transcript).join(' ')
-                sendAutoMessage(mergedTranscript, userId)
+                // Final check before sending - don't send if AI started speaking
+                if (!isSpeaking.value) {
+                    // All items in a group are from the same user within the time window
+                    const userId = group[0].userId
+                    const mergedTranscript = group.map(item => item.transcript).join(' ')
+                    sendAutoMessage(mergedTranscript, userId)
+                } else {
+                    console.log('🔇 Discarding queued speech group - AI started speaking')
+                }
                 
                 // Remove processed items from queue
                 group.forEach(item => {
@@ -582,9 +908,21 @@ export default defineComponent({
         const startAutoRecording = () => {
             if (!autoRecognition || !speechSupported.value) return
             
+            // Don't start recording if AI is currently speaking
+            if (isSpeaking.value) {
+                console.log('🔇 Not starting voice recording - AI is speaking')
+                return
+            }
+            
+            // Additional check for active audio streams
+            if (activeAudioStreams.value.size > 0) {
+                console.log(`🔇 Not starting voice recording - ${activeAudioStreams.value.size} active audio streams`)
+                return
+            }
+            
             try {
                 autoRecognition.start()
-                console.log('Auto recording started')
+                console.log('🎤 Auto recording started successfully')
             } catch (error) {
                 console.error('Error starting auto recording:', error)
                 // If already running, that's okay
@@ -616,11 +954,14 @@ export default defineComponent({
         }
 
         // Text-to-Speech functions (OpenAI TTS)
-        const initTextToSpeech = () => {
+        const initTextToSpeech = async () => {
             // Check if Web Audio API is supported for high-quality audio playback
             if ('AudioContext' in window || 'webkitAudioContext' in window) {
                 ttsSupported.value = true
                 console.log('High-quality audio playback supported')
+                
+                // Initialize PCM audio context for real-time streaming
+                await initializePCMAudio()
             } else {
                 ttsSupported.value = false
                 console.log('High-quality audio playback not supported')
@@ -639,6 +980,13 @@ export default defineComponent({
                 if (wasAutoRecordingActive) {
                     console.log('🔇 Temporarily pausing voice recording to prevent AI feedback')
                     stopAutoRecording()
+                }
+                
+                // Clear any pending speech from the queue to prevent interference
+                if (speechQueue.value.length > 0) {
+                    console.log(`🗑️ Clearing ${speechQueue.value.length} queued speech items - AI is speaking`)
+                    speechQueue.value = []
+                    currentAutoTranscript.value = ''
                 }
                 
                 // Convert base64 to blob
@@ -668,10 +1016,7 @@ export default defineComponent({
                     
                     // Resume voice recording after AI finishes speaking (with delay)
                     if (wasAutoRecordingActive) {
-                        setTimeout(() => {
-                            console.log('🎤 Resuming voice recording after AI speech')
-                            startAutoRecording()
-                        }, 500) // 500ms delay to ensure audio has fully stopped
+                        resumeVoiceRecordingAfterAI(wasAutoRecordingActive)
                     }
                 }
                 
@@ -683,10 +1028,7 @@ export default defineComponent({
                     
                     // Resume voice recording even if audio failed
                     if (wasAutoRecordingActive) {
-                        setTimeout(() => {
-                            console.log('🎤 Resuming voice recording after AI audio error')
-                            startAutoRecording()
-                        }, 500)
+                        resumeVoiceRecordingAfterAI(wasAutoRecordingActive)
                     }
                 }
                 
@@ -719,9 +1061,13 @@ export default defineComponent({
         const stopSpeaking = () => {
             if (speechSynthesis.speaking) {
                 speechSynthesis.cancel()
-                isSpeaking.value = false
-                currentUtterance = null
             }
+            
+            // Stop PCM audio if playing
+            stopPCMAudio()
+            
+            isSpeaking.value = false
+            currentUtterance = null
         }
 
         const toggleAIVoice = () => {
@@ -730,6 +1076,139 @@ export default defineComponent({
                 stopSpeaking()
             }
             console.log('AI voice', aiVoiceEnabled.value ? 'enabled' : 'disabled')
+        }        // PCM audio functions
+        const initializePCMAudio = async () => {
+            try {
+                // Initialize Web Audio API context
+                const AudioContext = window.AudioContext || window.webkitAudioContext
+                if (!AudioContext) {
+                    console.warn('Web Audio API not supported - falling back to MP3 buffering')
+                    return false
+                }
+
+                audioContext = new AudioContext()
+                
+                // Resume audio context if suspended (browser policy)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume()
+                }
+                
+                console.log(`✅ PCM Audio Context initialized for real-time streaming (24kHz OpenAI PCM format)`)
+                console.log(`🎵 Audio Context State: ${audioContext.state}`)
+                console.log(`🔧 Audio Context Sample Rate: ${audioContext.sampleRate}Hz`)
+                console.log(`🎤 PCM Format: 24kHz, 16-bit, mono`)
+                
+                return true
+            } catch (error) {
+                console.error('Failed to initialize PCM audio context:', error)
+                return false
+            }
+        }
+
+        const playPCMChunk = async (messageId, pcmData, chunkNumber, isLastChunk = false) => {
+            if (!audioContext) {
+                // Try to initialize if not already done
+                const initialized = await initializePCMAudio()
+                if (!initialized) {
+                    console.warn('PCM audio not available, falling back to buffered playback')
+                    return
+                }
+            }
+
+            try {
+                // Validate PCM data length
+                if (pcmData.length % 2 !== 0) {
+                    console.warn(`PCM chunk ${chunkNumber} has odd length: ${pcmData.length} bytes`)
+                    return
+                }
+
+                // Convert PCM bytes to Float32Array for Web Audio API
+                const samples = new Float32Array(pcmData.length / 2)
+                const dataView = new DataView(pcmData.buffer)
+                
+                for (let i = 0; i < samples.length; i++) {
+                    // Convert 16-bit PCM to float (-1.0 to 1.0)
+                    const sample = dataView.getInt16(i * 2, true) // little-endian
+                    samples[i] = sample / 32768.0
+                }
+
+                // Create audio buffer with OpenAI's PCM format (24kHz)
+                const audioBuffer = audioContext.createBuffer(pcmChannels, samples.length, pcmSampleRate)
+                audioBuffer.getChannelData(0).set(samples)
+
+                // Create and play audio source
+                const source = audioContext.createBufferSource()
+                source.buffer = audioBuffer
+                source.connect(audioContext.destination)
+                
+                // For immediate real-time playback, schedule based on current context time
+                const currentTime = audioContext.currentTime
+                const chunkDuration = samples.length / pcmSampleRate
+                
+                // Start immediately if first chunk, otherwise schedule seamlessly
+                let startTime = currentTime
+                if (chunkNumber === 1) {
+                    // First chunk - start immediately
+                    audioPlaybackTime = currentTime
+                } else {
+                    // Subsequent chunks - schedule to play after previous chunk
+                    startTime = Math.max(currentTime, audioPlaybackTime)
+                }
+                
+                // Schedule the chunk to play
+                source.start(startTime)
+                
+                // Update timing for next chunk
+                audioPlaybackTime = startTime + chunkDuration
+                
+                console.log(`🎵 Playing PCM chunk ${chunkNumber} at ${startTime.toFixed(3)}s (${samples.length} samples @ ${pcmSampleRate}Hz, duration: ${chunkDuration.toFixed(3)}s)${isLastChunk ? ' [FINAL CHUNK]' : ''}`)
+
+                // Handle end of chunk
+                source.onended = () => {
+                    console.log(`✅ PCM chunk ${chunkNumber} playback completed`)
+                    
+                    // Mark this chunk as completed for tracking
+                    const streamData = streamingAudioChunks.value.get(messageId)
+                    if (streamData) {
+                        if (!streamData.completedChunks) {
+                            streamData.completedChunks = new Set()
+                        }
+                        streamData.completedChunks.add(chunkNumber)
+                        
+                        // Check if this was the final chunk and if so, trigger cleanup
+                        if (streamData.finalChunkNumber && chunkNumber === streamData.finalChunkNumber) {
+                            console.log(`🏁 FINAL PCM chunk ${chunkNumber} completed - triggering voice recording resumption`)
+                            
+                            // Use a timeout that accounts for any remaining audio buffer in the system
+                            setTimeout(() => {
+                                console.log(`🎯 Final PCM audio playback complete for ${messageId} - safe to resume voice recording`)
+                                cleanupAudioStream(messageId)
+                            }, 100) // Small delay to ensure all audio system buffers have finished
+                        }
+                    }
+                }
+
+            } catch (error) {
+                console.error(`Error playing PCM chunk ${chunkNumber}:`, error)
+                console.error('PCM data length:', pcmData.length, 'bytes')
+                console.error('Expected format: 24kHz, 16-bit, mono PCM')
+            }
+        }
+
+        const stopPCMAudio = () => {
+            // Reset audio playback timing
+            audioPlaybackTime = 0
+            
+            if (currentAudioSource) {
+                try {
+                    currentAudioSource.stop()
+                    currentAudioSource = null
+                } catch (error) {
+                    console.error('Error stopping PCM audio:', error)
+                }
+            }
+            
+            console.log('🔇 PCM audio playback stopped and timing reset')
         }
 
         onMounted(() => {
@@ -799,6 +1278,32 @@ export default defineComponent({
                     console.log('Received AI speech:', data)
                     handleAISpeech(data)
                 })
+
+                // Handle streaming audio events
+                props.socket.on('ai_audio_stream_start', (data) => {
+                    console.log('AI audio stream started:', data)
+                    handleAudioStreamStart(data)
+                })
+
+                props.socket.on('ai_audio_chunk', (data) => {
+                    console.log('Received AI audio chunk:', data.chunkNumber, data.totalBytes)
+                    handleAudioChunk(data)
+                })
+
+                props.socket.on('ai_audio_complete', (data) => {
+                    console.log('AI audio stream complete:', data)
+                    handleAudioStreamComplete(data)
+                })
+
+                props.socket.on('ai_audio_done', (data) => {
+                    console.log('AI audio streaming completely done:', data)
+                    handleAudioStreamDone(data)
+                })
+
+                props.socket.on('ai_audio_error', (data) => {
+                    console.log('AI audio error:', data)
+                    handleAudioError(data)
+                })
             }
         })
 
@@ -819,6 +1324,11 @@ export default defineComponent({
                 props.socket.off('user_count_update', handleUserCountUpdate)
                 props.socket.off('user_disconnected', handleUserCountUpdate)
                 props.socket.off('ai_speech', handleAISpeech)
+                props.socket.off('ai_audio_stream_start', handleAudioStreamStart)
+                props.socket.off('ai_audio_chunk', handleAudioChunk)
+                props.socket.off('ai_audio_complete', handleAudioStreamComplete)
+                props.socket.off('ai_audio_done', handleAudioStreamDone)
+                props.socket.off('ai_audio_error', handleAudioError)
             }
         })
 

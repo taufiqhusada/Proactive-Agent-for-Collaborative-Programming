@@ -8,10 +8,11 @@ import json
 import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from dataclasses import dataclass
 import threading
 import time
+import base64
 
 @dataclass
 class Message:
@@ -44,11 +45,13 @@ class AIAgent:
         else:
             try:
                 self.client = OpenAI(api_key=api_key)
+                self.async_client = AsyncOpenAI(api_key=api_key)  # For streaming TTS
                 print("✅ AI Agent (CodeBot) initialized successfully!")
             except Exception as e:
                 print(f"❌ Error initializing OpenAI client: {e}")
                 print("   AI agent will be disabled.")
                 self.client = None
+                self.async_client = None
         
         self.socketio = socketio_instance
         self.conversation_history = {}  # room_id -> ConversationContext
@@ -60,9 +63,9 @@ class AIAgent:
         self.agent_name = "CodeBot"
         self.agent_id = "ai_agent_codebot"
         self.voice_config = {
-            "model": "tts-1",  # Use tts-1 for speed, tts-1-hd for quality
-            "voice": "nova",   # Available: alloy, echo, fable, onyx, nova, shimmer
-            "speed": 1.1       # 0.25 to 4.0
+            "model": "tts-1",            # Use OpenAI's fast TTS model (tts-1 or tts-1-hd)
+            "voice": "nova",             # Available: alloy, echo, fable, onyx, nova, shimmer
+            "speed": 1.0                 # 0.25 to 4.0
         }
         
 
@@ -206,7 +209,7 @@ class AIAgent:
                         Rules: Be helpful, concise (max 70 words), respond only when valuable. Skip with 'SKIP_RESPONSE' if not needed."""
 
         try:
-            # print(system_prompt)
+            print(system_prompt)
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -259,8 +262,113 @@ class AIAgent:
             print(f"Error generating speech: {e}")
             return None
 
+    async def generate_streaming_speech(self, text: str, room_id: str, message_id: str):
+        """Generate streaming speech audio using OpenAI's streaming TTS API (following official docs)"""
+        if not self.async_client:
+            return None
+            
+        try:
+            # Limit text length to avoid very long audio files (70 words ≈ 350-500 chars)
+            if len(text) > 500:
+                text = text[:500] + "..."
+            
+            # Signal start of streaming
+            self.socketio.emit('ai_audio_stream_start', {
+                'messageId': message_id,
+                'room': room_id
+            }, room=room_id, namespace='/ws')
+            
+            chunk_number = 0
+            total_bytes_sent = 0
+            
+            print(f"🎤 Starting to stream audio for text: '{text[:50]}...'")
+            
+            # Use OpenAI's official streaming approach with AsyncOpenAI
+            async with self.async_client.audio.speech.with_streaming_response.create(
+                model=self.voice_config["model"],  # tts-1
+                voice=self.voice_config["voice"],  # nova
+                input=text,
+                speed=self.voice_config["speed"],
+                response_format="pcm"  # PCM for true real-time streaming
+            ) as response:
+                
+                # Stream audio chunks as they're generated (true real-time)
+                chunks_sent = []
+                async for chunk in response.iter_bytes(chunk_size=1024 * 2):  # 2KB chunks for PCM real-time
+                    if chunk:
+                        chunk_number += 1
+                        total_bytes_sent += len(chunk)
+                        chunks_sent.append(chunk_number)
+                        chunk_base64 = base64.b64encode(chunk).decode('utf-8')
+                        
+                        print(f"📦 Sending PCM chunk {chunk_number}: {len(chunk)} bytes")
+                        
+                        # Emit real-time audio chunk (we don't know if it's final yet)
+                        self.socketio.emit('ai_audio_chunk', {
+                            'messageId': message_id,
+                            'audioData': chunk_base64,
+                            'chunkNumber': chunk_number,
+                            'totalBytes': total_bytes_sent,
+                            'room': room_id,
+                            'isComplete': False,  # We don't know yet if this is final
+                            'isRealtime': True,
+                            'format': 'pcm'  # PCM format for true real-time streaming
+                        }, room=room_id, namespace='/ws')
+                        
+                        # No artificial delay - stream as fast as data arrives
+                
+                # Now we know the total number of chunks - send final chunk marker
+                if chunks_sent:
+                    final_chunk_number = chunks_sent[-1]
+                    print(f"🏁 Sending final chunk marker for chunk {final_chunk_number}")
+                    
+                    # Send a special "final chunk" marker
+                    self.socketio.emit('ai_audio_chunk', {
+                        'messageId': message_id,
+                        'audioData': '',  # Empty data
+                        'chunkNumber': final_chunk_number,
+                        'totalBytes': total_bytes_sent,
+                        'room': room_id,
+                        'isComplete': True,  # Mark as final
+                        'isRealtime': True,
+                        'format': 'pcm',
+                        'isFinalMarker': True  # Special flag to indicate this is just a marker
+                    }, room=room_id, namespace='/ws')
+            
+                # Signal completion - only that streaming is done, not that playback is done
+                self.socketio.emit('ai_audio_complete', {
+                    'messageId': message_id,
+                    'room': room_id,
+                    'totalChunks': chunk_number,
+                    'totalBytes': total_bytes_sent,
+                    'format': 'pcm'
+                }, room=room_id, namespace='/ws')
+                
+                # DON'T send ai_audio_done here - let frontend determine when playback is actually finished
+                
+                print(f"✅ Streamed {chunk_number} PCM chunks ({total_bytes_sent} bytes) for message {message_id}")
+            return True
+            
+        except Exception as e:
+            print(f"Error generating streaming speech: {e}")
+            # Signal error
+            self.socketio.emit('ai_audio_error', {
+                'messageId': message_id,
+                'room': room_id,
+                'error': str(e)
+            }, room=room_id, namespace='/ws')
+            
+            # CRITICAL: Even on error, signal that audio streaming is done
+            self.socketio.emit('ai_audio_done', {
+                'messageId': message_id,
+                'room': room_id,
+                'status': 'error'
+            }, room=room_id, namespace='/ws')
+            
+            return None
+
     async def send_ai_message_with_audio(self, room_id: str, content: str):
-        """Send an AI message to the chat room with optional audio - optimized for speed"""
+        """Send an AI message to the chat room with streaming audio - optimized for speed"""
         message = {
             'id': f"ai_{int(time.time() * 1000)}",
             'content': content,
@@ -269,7 +377,8 @@ class AIAgent:
             'timestamp': datetime.now().isoformat(),
             'room': room_id,
             'isAI': True,
-            'hasAudio': False  # Will be updated if audio is generated
+            'hasAudio': True,  # Will have streaming audio
+            'isStreaming': True  # Indicate this is a streaming response
         }
         
         # Update last response time
@@ -279,31 +388,29 @@ class AIAgent:
         # Send message immediately (don't wait for audio)
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
         
-        # Generate audio in parallel (non-blocking)
-        def generate_and_send_audio():
+        # Generate streaming audio in parallel (non-blocking)
+        def generate_and_stream_audio():
             try:
-                # Run the async audio generation in a new event loop
+                # Run the async audio streaming in a new event loop
                 async def audio_task():
-                    audio_data = await self.generate_speech(content)
-                    if audio_data:
-                        import base64
-                        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-                        self.socketio.emit('ai_speech', {
-                            'messageId': message['id'],
-                            'audioData': audio_base64,
-                            'room': room_id
-                        }, room=room_id, namespace='/ws')
+                    await self.generate_streaming_speech(content, room_id, message['id'])
                 
                 # Create and run new event loop for audio generation
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(audio_task())
                 loop.close()
-            except Exception:
-                pass  # Fail silently for audio to not block text response
+            except Exception as e:
+                print(f"Error in streaming audio: {e}")
+                # Fallback to simple notification that audio failed
+                self.socketio.emit('ai_audio_error', {
+                    'messageId': message['id'],
+                    'room': room_id,
+                    'error': 'Audio generation failed'
+                }, room=room_id, namespace='/ws')
         
-        # Start audio generation in a separate thread
-        threading.Thread(target=generate_and_send_audio, daemon=True).start()
+        # Start audio streaming in a separate thread
+        threading.Thread(target=generate_and_stream_audio, daemon=True).start()
     
     def send_ai_message_text_only(self, room_id: str, content: str):
         """Send an AI message to the chat room without audio"""
