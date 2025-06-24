@@ -185,6 +185,19 @@ def ws_problem_update(data):
         "problemDescription": problem_description
     }, room=room, include_self=False)
 
+@socketio.on("ai_audio_playback_complete", namespace="/ws")
+def ws_ai_audio_playback_complete(data):
+    """
+    Handle notification from frontend that AI audio playback is complete.
+    This is when we should release the AI generation lock.
+    """
+    print(f"AI audio playback complete notification from {request.sid} in room {data['room']}")
+    room = data["room"]
+    message_id = data.get("messageId", "")
+    
+    # Release AI generation lock now that audio is actually finished
+    ai_agent.release_generation_lock(room, message_id)
+
 @socketio.on("disconnect", namespace="/ws")
 def ws_disconnect():
     print(f"WS client {request.sid} disconnected")

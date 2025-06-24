@@ -241,7 +241,7 @@ export default defineComponent({
         const handleAISpeech = (data) => {
             // Play high-quality AI speech audio (legacy single-chunk method)
             if (aiVoiceEnabled.value && data.audioData) {
-                playAudioFromBase64(data.audioData)
+                playAudioFromBase64(data.audioData, data.messageId || `legacy_${Date.now()}`)
             }
         }
 
@@ -435,28 +435,42 @@ export default defineComponent({
         }
 
         const resumeVoiceRecordingAfterAI = (wasAutoRecordingActive) => {
+            console.log(`🔍 resumeVoiceRecordingAfterAI called with wasAutoRecordingActive: ${wasAutoRecordingActive}`)
+            console.log(`🔍 Current state - isSpeaking: ${isSpeaking.value}, autoRecordingEnabled: ${autoRecordingEnabled.value}`)
+            
             // Check if auto recording should be resumed
             if (wasAutoRecordingActive && !isSpeaking.value) {
+                console.log('🎤 Conditions met for voice recording resumption, scheduling...')
                 setTimeout(() => {
                     // Double-check the conditions before resuming
+                    console.log(`🔍 After delay - isSpeaking: ${isSpeaking.value}, autoRecordingEnabled: ${autoRecordingEnabled.value}`)
                     if (wasAutoRecordingActive && !isSpeaking.value) {
                         console.log('🔓 Re-enabling auto recording after AI finished speaking')
                         autoRecordingEnabled.value = true
                         
                         // Small additional delay to ensure everything is settled
                         setTimeout(() => {
+                            console.log(`🔍 Final check - autoRecordingEnabled: ${autoRecordingEnabled.value}, isSpeaking: ${isSpeaking.value}`)
                             if (autoRecordingEnabled.value && !isSpeaking.value) {
-                                console.log('🎤 Resuming voice recording after AI finished speaking')
+                                console.log('🎤 Actually resuming voice recording after AI finished speaking')
                                 startAutoRecording()
+                            } else {
+                                console.log('❌ Failed final check for voice recording resumption')
                             }
                         }, 200)
+                    } else {
+                        console.log('❌ Failed conditions check after delay')
                     }
                 }, 500) // 500ms delay to ensure audio has fully stopped
+            } else {
+                console.log(`❌ Conditions not met for resumption - wasAutoRecordingActive: ${wasAutoRecordingActive}, isSpeaking: ${isSpeaking.value}`)
             }
         }
 
         const cleanupAudioStream = (messageId) => {
             const streamData = streamingAudioChunks.value.get(messageId)
+            console.log(`🧹 cleanupAudioStream called for ${messageId}`)
+            console.log(`🔍 streamData:`, streamData)
             
             // Clean up streaming state
             streamingAudioChunks.value.delete(messageId)
@@ -472,10 +486,22 @@ export default defineComponent({
                 console.log('🔇 All audio streams complete - AI finished speaking')
                 isSpeaking.value = false
                 
+                // Notify backend that audio playback is complete so it can release the generation lock
+                if (props.socket && props.roomId) {
+                    props.socket.emit('ai_audio_playback_complete', {
+                        room: props.roomId,
+                        messageId: messageId
+                    })
+                    console.log('📤 Notified backend that AI audio playback is complete')
+                }
+                
                 // Resume voice recording if it was active, with additional safety checks
+                console.log(`🔍 Checking voice resumption - streamData?.wasAutoRecordingActive: ${streamData?.wasAutoRecordingActive}`)
                 if (streamData?.wasAutoRecordingActive) {
                     console.log('📋 Scheduling voice recording resumption after stream cleanup')
                     resumeVoiceRecordingAfterAI(streamData.wasAutoRecordingActive)
+                } else {
+                    console.log('🔇 Voice recording was not active before streaming audio')
                 }
             } else {
                 console.log(`🔄 AI still speaking - ${activeAudioStreams.value.size} active streams remaining`)
@@ -884,9 +910,14 @@ export default defineComponent({
         }
 
         const toggleAutoRecording = () => {
-            if (!speechSupported.value) return
+            console.log(`🎤 toggleAutoRecording called - current state: ${autoRecordingEnabled.value}`)
+            if (!speechSupported.value) {
+                console.log('❌ Speech not supported')
+                return
+            }
             
             autoRecordingEnabled.value = !autoRecordingEnabled.value
+            console.log(`🎤 Auto recording toggled to: ${autoRecordingEnabled.value}`)
             
             if (autoRecordingEnabled.value) {
                 startAutoRecording()
@@ -906,7 +937,16 @@ export default defineComponent({
         }
 
         const startAutoRecording = () => {
-            if (!autoRecognition || !speechSupported.value) return
+            console.log(`🎤 startAutoRecording called`)
+            console.log(`🔍 autoRecognition exists: ${!!autoRecognition}`)
+            console.log(`🔍 speechSupported: ${speechSupported.value}`)
+            console.log(`🔍 isSpeaking: ${isSpeaking.value}`)
+            console.log(`🔍 activeAudioStreams.size: ${activeAudioStreams.value.size}`)
+            
+            if (!autoRecognition || !speechSupported.value) {
+                console.log('❌ Cannot start auto recording - missing recognition or unsupported')
+                return
+            }
             
             // Don't start recording if AI is currently speaking
             if (isSpeaking.value) {
@@ -927,7 +967,10 @@ export default defineComponent({
                 console.error('Error starting auto recording:', error)
                 // If already running, that's okay
                 if (error.name !== 'InvalidStateError') {
+                    console.log('❌ Disabling auto recording due to error')
                     autoRecordingEnabled.value = false
+                } else {
+                    console.log('✅ Auto recognition was already running')
                 }
             }
         }
@@ -968,7 +1011,7 @@ export default defineComponent({
             }
         }
 
-        const playAudioFromBase64 = async (base64Audio) => {
+        const playAudioFromBase64 = async (base64Audio, messageId = null) => {
             if (!ttsSupported.value || !aiVoiceEnabled.value) return
             
             try {
@@ -1012,11 +1055,24 @@ export default defineComponent({
                     isSpeaking.value = false
                     currentUtterance = null
                     URL.revokeObjectURL(audioUrl)
-                    console.log('✅ Finished playing AI speech')
+                    console.log('✅ Finished playing AI speech (legacy)')
+                    
+                    // Notify backend that audio playback is complete for legacy audio too
+                    if (props.socket && props.roomId && messageId) {
+                        props.socket.emit('ai_audio_playback_complete', {
+                            room: props.roomId,
+                            messageId: messageId
+                        })
+                        console.log(`📤 Notified backend that legacy AI audio playback is complete (${messageId})`)
+                    }
                     
                     // Resume voice recording after AI finishes speaking (with delay)
+                    console.log(`🔍 Legacy audio ended, wasAutoRecordingActive: ${wasAutoRecordingActive}`)
                     if (wasAutoRecordingActive) {
+                        console.log('🎤 Scheduling voice recording resumption after legacy AI audio')
                         resumeVoiceRecordingAfterAI(wasAutoRecordingActive)
+                    } else {
+                        console.log('🔇 Voice recording was not active before legacy AI audio')
                     }
                 }
                 
@@ -1025,6 +1081,15 @@ export default defineComponent({
                     isSpeaking.value = false
                     currentUtterance = null
                     URL.revokeObjectURL(audioUrl)
+                    
+                    // Notify backend even if audio failed
+                    if (props.socket && props.roomId && messageId) {
+                        props.socket.emit('ai_audio_playback_complete', {
+                            room: props.roomId,
+                            messageId: messageId
+                        })
+                        console.log(`📤 Notified backend that legacy AI audio playback failed (${messageId})`)
+                    }
                     
                     // Resume voice recording even if audio failed
                     if (wasAutoRecordingActive) {
@@ -1039,6 +1104,15 @@ export default defineComponent({
                 console.error('Error playing audio:', error)
                 isSpeaking.value = false
                 currentUtterance = null
+                
+                // Notify backend even if audio failed
+                if (props.socket && props.roomId && messageId) {
+                    props.socket.emit('ai_audio_playback_complete', {
+                        room: props.roomId,
+                        messageId: messageId
+                    })
+                    console.log(`📤 Notified backend that legacy AI audio playback errored (${messageId})`)
+                }
             }
         }
 
