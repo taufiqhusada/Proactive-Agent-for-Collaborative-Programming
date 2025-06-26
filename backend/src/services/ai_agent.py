@@ -41,8 +41,7 @@ class ConversationContext:
     silence_start: Optional[datetime] = None
     consecutive_errors: int = 0
     last_error_time: Optional[datetime] = None
-    current_discussion_topic: str = ""
-    discussion_start_time: Optional[datetime] = None
+    # Topic tracking removed - centralized LLM handles all conversation analysis
     user_participation: Dict[str, int] = None  # user_id -> message_count
     dominant_user: Optional[str] = None
     has_planned: bool = False
@@ -94,7 +93,7 @@ class AIAgent:
         
         # Research-based intervention thresholds
         self.silence_threshold = 30  # 30 seconds silence threshold (from research)
-        self.misdirection_threshold = 30  # 30 seconds discussing wrong idea
+        # Misdirection threshold removed - centralized LLM handles all conversation analysis
         self.error_threshold = 3  # 3 identical errors trigger intervention
         self.dominance_threshold = 0.7  # If one user > 70% of messages
         self.code_review_interval = 5  # Review code every 5 seconds when coding
@@ -110,6 +109,9 @@ class AIAgent:
         
         # Start background monitoring for research-based interventions
         self._start_research_based_monitoring()
+        
+        # Centralized intervention tracking
+        self.last_ai_intervention_time = None
         
 
         
@@ -169,9 +171,6 @@ class AIAgent:
         # Track error patterns
         self._track_error_patterns(context, message)
         
-        # Track discussion topics for misdirection detection
-        self._update_discussion_tracking(context, message)
-        
         # Keep only the most recent messages
         if len(context.messages) > self.max_context_messages:
             context.messages = context.messages[-self.max_context_messages:]
@@ -208,13 +207,14 @@ class AIAgent:
     def should_respond(self, room_id: str) -> bool:
         """Research-based decision making for AI intervention with concurrency control"""
         if room_id not in self.conversation_history:
+            print(f"🚫 AI WILL NOT RESPOND: No conversation history for room {room_id}")
             return False
             
         context = self.conversation_history[room_id]
 
         # CRITICAL: Don't respond if AI is already generating a response
         if context.ai_generating_response:
-            print(f"🚫 BLOCKED RESPONSE: AI already generating response for room {room_id}")
+            print(f"🚫 AI WILL NOT RESPOND: Already generating response for room {room_id}")
             return False
         
         # Check if AI response lock has expired (safety mechanism)
@@ -229,29 +229,37 @@ class AIAgent:
         if context.last_ai_response:
             time_since_last = datetime.now() - context.last_ai_response
             if time_since_last < timedelta(seconds=self.response_cooldown):
+                print(f"🚫 AI WILL NOT RESPOND: Cooldown period ({time_since_last.total_seconds():.1f}s < {self.response_cooldown}s)")
                 return False
                 
         # Need minimum number of messages
         if len(context.messages) < self.min_messages_before_response:
+            print(f"🚫 AI WILL NOT RESPOND: Not enough messages ({len(context.messages)} < {self.min_messages_before_response})")
             return False
         
         # Research-based intervention logic
-        should_intervene = self._should_intervene_based_on_research(context)
+        should_intervene, intervention_message = self._should_intervene_based_on_research(context)
         
         if should_intervene:
-            print(f"🎯 REGULAR RESPONSE TRIGGERED: Room {room_id}")
+            print(f"✅ AI WILL RESPOND: Intervention decision made for room {room_id}")
             print(f"   Recent messages: {len(context.messages[-3:])}")
             print(f"   Last message: {context.messages[-1].content[:50]}{'...' if len(context.messages[-1].content) > 50 else ''}")
+            print(f"   Intervention Message Preview: {intervention_message[:50]}{'...' if len(intervention_message) > 50 else ''}")
+            
+            # Store the intervention message for generate_response to use
+            context.pending_intervention_message = intervention_message
             
             # Lock AI response generation to prevent concurrent responses
             context.ai_generating_response = True
             context.ai_response_lock_time = datetime.now()
             print(f"🔒 AI RESPONSE LOCK: Acquired for room {room_id}")
+        else:
+            print(f"🚫 AI WILL NOT RESPOND: Intervention not needed for room {room_id}")
         
         return should_intervene
         
     async def generate_response(self, room_id: str) -> Optional[str]:
-        """Generate research-based AI response"""
+        """Generate research-based AI response using centralized intervention decision"""
         if not self.client:
             print("⚠️  Cannot generate AI response: OpenAI client not initialized")
             return None
@@ -260,7 +268,26 @@ class AIAgent:
             return None
             
         context = self.conversation_history[room_id]
-        return await self._generate_research_based_response(context)
+        
+        # Check if we have a pre-generated intervention message from centralized decision
+        if hasattr(context, 'pending_intervention_message') and context.pending_intervention_message:
+            intervention_message = context.pending_intervention_message
+            
+            print(f"✅ USING CENTRALIZED INTERVENTION: {len(intervention_message.split())} words")
+            print(f"   Preview: {intervention_message[:100]}{'...' if len(intervention_message) > 100 else ''}")
+            
+            # Update tracking
+            self.last_ai_intervention_time = datetime.now()
+            context.last_ai_response = datetime.now()
+            
+            # Clear the pending message
+            context.pending_intervention_message = None
+            
+            return intervention_message
+        else:
+            # Fallback to old method if no centralized message available
+            print("⚠️  No centralized intervention message found, using fallback")
+            return await self._generate_research_based_response(context)
     
     async def _generate_research_based_response(self, context: ConversationContext) -> Optional[str]:
         """Generate response based on research guidelines with concurrency protection"""
@@ -301,10 +328,18 @@ class AIAgent:
                 print(f"🔓 AI RESPONSE LOCK: Released (no response) for room {context.room_id}")
                 return None
             
-            # Ensure response doesn't exceed 70 words
+            # Smart length adaptation for fallback responses too
             words = ai_response.split()
-            if len(words) > 70:
-                ai_response = ' '.join(words[:70]) + "..."
+            word_count = len(words)
+            
+            if word_count > 15:
+                if word_count > 30:
+                    ai_response = ' '.join(words[:30]) + "..."
+                    print(f"⚠️  Fallback message truncated from {word_count} to 30 words")
+                elif word_count > 20:
+                    print(f"📝 Longer fallback message: {word_count} words")
+            else:
+                print(f"✅ Concise fallback message: {word_count} words")
             
             # Update context based on intervention
             self._update_context_after_intervention(context, intervention_type)
@@ -324,44 +359,30 @@ class AIAgent:
     
     def _determine_intervention_type(self, context: ConversationContext) -> str:
         """Determine which type of research-based intervention is needed"""
-        recent_messages = context.messages[-3:]
+        # Check if we have an LLM decision from previous analysis
+        if hasattr(context, 'llm_intervention_decision') and context.llm_intervention_decision:
+            llm_decision = context.llm_intervention_decision
+            
+            # Map LLM decisions to intervention types
+            decision_mapping = {
+                "PROVIDE_HINT": "provide_hint",
+                "PROVIDE_SOLUTION": "provide_solution", 
+                "ENCOURAGE_PLANNING": "encourage_planning",
+                "PROMPT_REFLECTION": "prompt_reflection",
+                "ADDRESS_MISDIRECTION": "address_misdirection"
+            }
+            
+            if llm_decision in decision_mapping:
+                print(f"🧠 USING LLM DECISION: {llm_decision} → {decision_mapping[llm_decision]}")
+                # Clear the decision after using it
+                context.llm_intervention_decision = None
+                return decision_mapping[llm_decision]
         
-        # Check for help requests (Technical Copilot)
-        if self._detect_help_request(recent_messages):
-            if context.consecutive_errors >= 2:
-                return "provide_solution"  # After hints didn't work
-            else:
-                return "provide_hint"  # First attempt
-        
-        # Check for planning needs (Learning Facilitator)
-        if self._should_encourage_planning(context, recent_messages):
-            return "encourage_planning"
-        
-        # Check for reflection needs (Learning Facilitator)
-        if self._should_prompt_reflection(context, recent_messages):
-            return "prompt_reflection"
-        
-        # Check for dominance issues (Communication Facilitator)
-        if context.dominant_user:
-            return "address_imbalance"
-        
-        # Check for misdirection (Communication Facilitator)
-        if self._should_address_misdirection(context):
-            return "address_misdirection"
-        
-        # Default technical assistance
+        # Fallback - should not be reached since centralized LLM handles all decisions
+        print("⚠️  Fallback intervention type - centralized LLM should handle all decisions")
         return "technical_assistance"
     
-    def _should_address_misdirection(self, context: ConversationContext) -> bool:
-        """Check if misdirection intervention is needed"""
-        if not context.current_discussion_topic or not context.discussion_start_time:
-            return False
-        
-        current_time = datetime.now()
-        discussion_duration = (current_time - context.discussion_start_time).total_seconds()
-        
-        # If they've been discussing something for ≥30s, it might need checking
-        return discussion_duration >= self.misdirection_threshold
+    # Misdirection detection removed - centralized LLM handles all conversation analysis intelligently
     
     def _create_research_prompt(self, context: ConversationContext, intervention_type: str, conversation_text: str) -> str:
         """Create research-based system prompt"""
@@ -381,31 +402,31 @@ Recent conversation:
 Your role: Technical Copilot - Provide Hints
 Research guidance: "Do it with me instead of do it for me" - give hints rather than direct solutions to maintain code ownership and understanding.
 
-Provide a helpful hint that guides them toward the solution without giving it away completely. Focus on the next step they should consider.""",
+Provide a helpful hint that guides them toward the solution without giving it away completely. Focus on the next step they should consider. KEEP IT VERY SHORT - PREFER 5-10 WORDS.""",
             
             "provide_solution": base_context + """
 Your role: Technical Copilot - Provide Decomposed Solution  
 Research guidance: When students are still stuck after hints, provide step-by-step solutions to ensure better code understanding.
 
-Break down the solution into clear, digestible steps with explanations.""",
+Break down the solution into clear, digestible steps with explanations. BE CONCISE BUT COMPLETE - MAX 25 WORDS when step-by-step explanation is needed.""",
             
             "encourage_planning": base_context + """
 Your role: Learning Facilitator - Encourage Planning
 Research guidance: Novice programmers often don't do enough planning. Understanding the problem and having a plan is crucial.
 
-Ask them to describe their approach in steps before coding. If they have a plan that might cause issues, gently challenge it.""",
+Ask them to describe their approach in steps before coding. USE VERY SHORT QUESTIONS - PREFER 3-8 WORDS.""",
             
             "prompt_reflection": base_context + """
 Your role: Learning Facilitator - Prompt Reflection
 Research guidance: Reflection helps prevent overreliance on AI and ensures code understanding.
 
-Ask them to walk through what their code does or explain their reasoning. Promote metacognitive thinking.""",
+Ask them to walk through what their code does or explain their reasoning. ASK ONE FOCUSED QUESTION - PREFER 4-8 WORDS.""",
             
             "address_imbalance": base_context + """
 Your role: Communication Facilitator - Address Imbalance
 Research guidance: Skill mismatches can lead to one student dominating. Encourage balanced participation.
 
-Gently encourage the quieter student to share thoughts or ask the dominant student to pause and summarize.""",
+Gently encourage the quieter student to share thoughts or ask the dominant student to pause and summarize. BE VERY BRIEF - PREFER 5-10 WORDS.""",
             
             "address_misdirection": base_context + """
 Your role: Communication Facilitator - Address Misdirection
@@ -427,9 +448,7 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         elif intervention_type == "address_imbalance":
             context.dominant_user = None  # Reset dominance tracking
             context.user_participation = {}  # Reset participation counts
-        elif intervention_type == "address_misdirection":
-            context.current_discussion_topic = ""  # Reset topic tracking
-            context.discussion_start_time = None
+        # Topic tracking removed - no longer needed
         
         # Mark intervention as sent with new tracking system
         self._mark_intervention_sent(context, intervention_type)
@@ -694,6 +713,19 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         """Handle problem description updates"""
         self.update_problem_context(room_id, problem_title, problem_description)
         
+    def release_generation_lock(self, room_id: str, message_id: str = None):
+        """Release AI generation lock when audio playback is complete"""
+        if room_id in self.conversation_history:
+            context = self.conversation_history[room_id]
+            if context.ai_generating_response:
+                context.ai_generating_response = False
+                context.ai_response_lock_time = None
+                print(f"🔓 AI RESPONSE LOCK: Released after audio playback complete for room {room_id} (message: {message_id})")
+            else:
+                print(f"🔄 AI RESPONSE LOCK: Already released for room {room_id}")
+        else:
+            print(f"⚠️ AI RESPONSE LOCK: No context found for room {room_id}")
+    
     def join_room(self, room_id: str):
         """AI agent joins a room"""
         # Only send greeting if OpenAI client is available
@@ -742,43 +774,233 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         
         threading.Thread(target=monitor_conversations, daemon=True).start()
     
-    def _should_intervene_based_on_research(self, context: ConversationContext) -> bool:
-        """Determine intervention based on research guidelines"""
+    def _should_intervene_based_on_research(self, context: ConversationContext) -> tuple[bool, str]:
+        """PRIMARY intervention logic based on research findings"""
+        if not context.messages:
+            print("🚫 AI WILL NOT INTERVENE: No conversation history")
+            return False, ""
+        
+        # Get recent messages (last 3)
         recent_messages = context.messages[-3:]
+        discussion_duration = self._get_discussion_duration_since_last_intervention(context)
         
-        # 1. Technical Copilot: Students asking for help or stuck
-        if self._detect_help_request(recent_messages):
-            return True
+        print(f"\n🤖 AI Agent: Evaluating intervention need...")
+        print(f"   Discussion Duration: {discussion_duration:.1f}s")
+        print(f"   Last AI Intervention: {self.last_ai_intervention_time}")
+        print(f"   Recent Messages: {len(recent_messages)}")
         
-        # 2. Communication Facilitator: Check for silence (handled in background)
-        # This is handled by _monitor_silence_and_errors
+        # STEP 1: 30-SECOND THRESHOLD (CODE DECISION, NOT LLM)
+        if discussion_duration < 30:
+            print(f"🚫 AI WILL NOT INTERVENE: 30s threshold not met ({discussion_duration:.1f}s < 30s)")
+            print(f"   Waiting {30 - discussion_duration:.1f}s more before any intervention possible")
+            return False, ""
         
-        # 3. Learning Facilitator: Check if they need planning guidance
-        if self._should_encourage_planning(context, recent_messages):
-            return True
+        print(f"✓ 30s threshold met ({discussion_duration:.1f}s), proceeding with evaluation...")
         
-        # 4. Check if they need reflection prompts
-        if self._should_prompt_reflection(context, recent_messages):
-            return True
+        # STEP 2: ONLY CHECK CRITICAL THRESHOLDS (silence/errors)
+        # Check for prolonged silence - this is a clear intervention trigger
+        if hasattr(context, 'silence_start') and context.silence_start:
+            silence_duration = (datetime.now() - context.silence_start).total_seconds()
+            if silence_duration >= 30:  # 30+ seconds of silence
+                print(f"✅ AI WILL INTERVENE: Prolonged silence ({silence_duration:.1f}s)")
+                return True, "Stuck?"
         
-        return False
+        # Check for repeated errors - clear intervention trigger
+        if context.consecutive_errors >= 3:
+            print(f"✅ AI WILL INTERVENE: Multiple consecutive errors ({context.consecutive_errors})")
+            return True, "Same error. Help?"
+        
+        # STEP 3: LET AI MAKE ALL OTHER DECISIONS (CENTRALIZED LLM CALL)
+        print(f"🧠 Using AI to analyze conversation and make intervention decision...")
+        should_intervene, intervention_message = self._centralized_llm_intervention_decision(context, discussion_duration)
+        
+        return should_intervene, intervention_message
+        
+    def _get_discussion_duration_since_last_intervention(self, context: ConversationContext) -> float:
+        """Calculate how long discussion has been going since last AI intervention"""
+        if not hasattr(self, 'last_ai_intervention_time') or not self.last_ai_intervention_time:
+            # If no previous intervention, consider discussion has been going for a while
+            return 35.0  # Default to 35 seconds to pass the 30s threshold
+        
+        current_time = datetime.now()
+        duration = (current_time - self.last_ai_intervention_time).total_seconds()
+        return duration
+    
+    def _centralized_llm_intervention_decision(self, context: ConversationContext, discussion_duration: float) -> tuple[bool, str]:
+        """CENTRALIZED LLM CALL: Decide intervention + type + generate message ALL IN ONE"""
+        if not self.client:
+            # If no LLM available, don't intervene (except for silence/errors which are handled above)
+            print("🚫 AI WILL NOT INTERVENE: No LLM client available")
+            return False, ""
+        
+        # Get recent conversation context (last 5 messages)
+        recent_conversation = ""
+        for msg in context.messages[-5:]:
+            recent_conversation += f"{msg.username}: {msg.content}\n"
+        
+        # SINGLE comprehensive prompt that handles EVERYTHING
+        comprehensive_prompt = f"""You are CodeBot, an AI pair programming assistant. Analyze this conversation and decide:
+1. Should you intervene? (The 30+ second threshold has been met)
+2. If yes, what type of intervention?
+3. What message should you send? (Max 70 words)
+
+Problem Context:
+- Problem: {context.problem_title or "General coding"}
+- Language: {context.programming_language}
+- Discussion Duration: {discussion_duration:.1f} seconds
+
+Recent Conversation:
+{recent_conversation}
+
+Code Context:
+{context.code_context[:300] if context.code_context else "No code visible"}
+
+RESEARCH-BASED INTERVENTION TYPES:
+1. Technical Copilot - Provide hints/solutions when stuck
+2. Learning Facilitator - Encourage planning/reflection  
+3. Communication Facilitator - Address imbalance/misdirection
+
+USE YOUR INTELLIGENCE TO EVALUATE:
+- Are they actively discussing and making progress? → NO_INTERVENTION
+- Are they stuck, confused, or asking for help? → PROVIDE_HINT/PROVIDE_SOLUTION
+- Are they jumping into code without planning? → ENCOURAGE_PLANNING
+- Have they completed something without explaining? → PROMPT_REFLECTION
+- Is one person dominating the conversation? → ADDRESS_IMBALANCE
+- Are they discussing wrong approaches for too long? → ADDRESS_MISDIRECTION
+
+RESPONSE FORMAT:
+If intervention needed: "INTERVENE|[TYPE]|[MESSAGE]"
+If no intervention: "NO_INTERVENTION"
+
+Types: PROVIDE_HINT, PROVIDE_SOLUTION, ENCOURAGE_PLANNING, PROMPT_REFLECTION, ADDRESS_MISDIRECTION, ADDRESS_IMBALANCE
+
+KEEP MESSAGES EXTREMELY CONCISE:
+- PREFER 5-15 words for most situations
+- MAX 30 words only when explanation is absolutely critical
+- Use short, direct phrases and questions
+- Avoid explanations unless solving complex problems
+- Examples: "Stuck?" "What's your approach?" "Try the base case." "Need help with that loop?"
+
+WHEN TO USE LONGER MESSAGES (20-30 words):
+- Providing step-by-step solutions for complex problems
+- Addressing serious misdirection that needs explanation
+- Multiple consecutive errors requiring detailed debugging help
+
+Your response (PREFER 5-15 words, MAX 30 when critical):"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are CodeBot, an expert pair programming facilitator. Make ONE decision covering intervention, type, and message. PRIORITIZE VERY SHORT MESSAGES (5-15 words) unless complex explanation is truly needed."},
+                    {"role": "user", "content": comprehensive_prompt}
+                ],
+                max_tokens=120,  # Enough for decision + 70-word message
+                temperature=0.7
+            )
+            
+            llm_response = response.choices[0].message.content.strip()
+            
+            if llm_response == "NO_INTERVENTION" or llm_response.startswith("NO_INTERVENTION"):
+                print(f"🚫 AI WILL NOT INTERVENE: LLM Decision - Continue discussion ({discussion_duration:.1f}s)")
+                print(f"   Reason: Users are discussing productively, let them continue")
+                return False, ""
+            
+            elif llm_response.startswith("INTERVENE|"):
+                # Parse the structured response: INTERVENE|TYPE|MESSAGE
+                parts = llm_response.split("|", 2)
+                if len(parts) >= 3:
+                    intervention_type = parts[1]
+                    intervention_message = parts[2]
+                    
+                    # Smart length adaptation: prefer very short, allow longer when critical
+                    words = intervention_message.split()
+                    word_count = len(words)
+                    
+                    # Most messages should be 5-15 words
+                    if word_count > 15:
+                        # Allow up to 30 words for complex situations, but warn if excessive
+                        if word_count > 30:
+                            intervention_message = ' '.join(words[:30]) + "..."
+                            print(f"⚠️  Message truncated from {word_count} to 30 words")
+                        elif word_count > 20:
+                            print(f"📝 Longer message used: {word_count} words (acceptable for complex situation)")
+                    else:
+                        print(f"✅ Concise message: {word_count} words (preferred length)")
+                    
+                    print(f"✅ AI WILL INTERVENE: LLM Centralized Decision")
+                    print(f"   Discussion Duration: {discussion_duration:.1f}s")
+                    print(f"   Intervention Type: {intervention_type}")
+                    print(f"   Message Preview: {intervention_message[:50]}{'...' if len(intervention_message) > 50 else ''}")
+                    
+                    # Update context for tracking
+                    self._update_context_after_intervention(context, intervention_type.lower())
+                    
+                    return True, intervention_message
+                else:
+                    print(f"❌ LLM response format error: {llm_response}")
+                    return False, ""
+            else:
+                print(f"❌ Unexpected LLM response format: {llm_response}")
+                return False, ""
+                
+        except Exception as e:
+            print(f"❌ Error in centralized LLM intervention: {e}")
+            # Conservative fallback - don't interrupt
+            print(f"🚫 AI WILL NOT INTERVENE: LLM error, defaulting to no intervention")
+            return False, ""
     
     def _detect_help_request(self, messages: List[Message]) -> bool:
-        """Detect when students need technical help"""
-        help_indicators = [
-            'stuck', 'help', 'error', 'bug', 'problem', 'issue', 'confused',
-            'why', 'how', 'what', 'debug', 'fix', 'broken', 'fail', 'exception',
-            'syntax error', 'not working', "doesn't work", 'any ideas'
-        ]
+        """Use LLM to intelligently detect when students need technical help"""
+        if not self.client:
+            # Fallback: Only look for explicit question marks if no LLM
+            return any('?' in message.content for message in messages)
         
-        for message in messages:
-            content_lower = message.content.lower()
-            if any(indicator in content_lower for indicator in help_indicators):
-                return True
-            if '?' in message.content:  # Questions
-                return True
+        # Build recent conversation context
+        conversation_text = ""
+        for msg in messages:
+            conversation_text += f"{msg.username}: {msg.content}\n"
         
-        return False
+        help_detection_prompt = f"""Analyze this pair programming conversation to determine if the students need immediate technical help.
+
+Recent conversation:
+{conversation_text}
+
+Look for:
+- Direct requests for help ("I'm stuck", "Can you help", "How do we...")
+- Technical confusion or errors being discussed
+- Questions about code, syntax, or implementation
+- Expressions of being lost or not understanding
+
+Respond with ONLY:
+- "HELP_NEEDED" - They are asking for immediate technical assistance
+- "NO_HELP_NEEDED" - They are discussing normally without needing intervention"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert at detecting when students need technical help in pair programming."},
+                    {"role": "user", "content": help_detection_prompt}
+                ],
+                max_tokens=20,
+                temperature=0.1
+            )
+            
+            help_decision = response.choices[0].message.content.strip()
+            is_help_needed = help_decision == "HELP_NEEDED"
+            
+            if is_help_needed:
+                print(f"🧠 LLM HELP DETECTION: HELP_NEEDED - Direct technical assistance requested")
+            else:
+                print(f"🧠 LLM HELP DETECTION: NO_HELP_NEEDED - Normal discussion continuing")
+            
+            return is_help_needed
+            
+        except Exception as e:
+            print(f"❌ Error in LLM help detection: {e}")
+            # Conservative fallback - only respond to explicit questions
+            return any('?' in message.content for message in messages)
     
     def _should_encourage_planning(self, context: ConversationContext, messages: List[Message]) -> bool:
         """Research: Encourage planning before coding"""
@@ -850,49 +1072,10 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
             # Reset error count on non-error message
             context.consecutive_errors = 0
     
-    def _update_discussion_tracking(self, context: ConversationContext, message: Message):
-        """Research: Track discussion topics for misdirection detection"""
-        current_time = datetime.now()
-        content_lower = message.content.lower()
-        
-        # Extract main discussion topic from the message
-        new_topic = self._extract_discussion_topic(content_lower)
-        
-        if new_topic:
-            if context.current_discussion_topic != new_topic:
-                # New topic started
-                context.current_discussion_topic = new_topic
-                context.discussion_start_time = current_time
-            # If same topic continues, keep the original start time
-        elif not context.current_discussion_topic:
-            # No specific topic detected, but track general discussion
-            context.current_discussion_topic = "general"
-            context.discussion_start_time = current_time
-    
-    def _extract_discussion_topic(self, content_lower: str) -> str:
-        """Extract the main technical topic being discussed"""
-        # Programming concepts and approaches
-        topic_indicators = {
-            'recursion': ['recursive', 'recursion', 'recursive call', 'base case'],
-            'iteration': ['loop', 'for loop', 'while loop', 'iterate', 'iteration'],
-            'sorting': ['sort', 'sorting', 'bubble sort', 'quick sort', 'merge sort'],
-            'search': ['search', 'binary search', 'linear search', 'find'],
-            'data_structure': ['array', 'list', 'dictionary', 'hash', 'tree', 'stack', 'queue'],
-            'algorithm': ['algorithm', 'approach', 'method', 'strategy'],
-            'optimization': ['optimize', 'performance', 'efficient', 'complexity'],
-            'debugging': ['debug', 'error', 'bug', 'fix', 'issue', 'problem'],
-            'design_pattern': ['pattern', 'design', 'architecture', 'structure'],
-            'testing': ['test', 'testing', 'unit test', 'debug'],
-        }
-        
-        for topic, keywords in topic_indicators.items():
-            if any(keyword in content_lower for keyword in keywords):
-                return topic
-        
-        return None
+    # Topic tracking removed - LLM handles all conversation analysis intelligently
     
     def _monitor_silence_and_errors(self):
-        """Research: Monitor for silence ≥30s or ≥3 identical errors (smart, non-annoying version)"""
+        """Monitor for silence ≥30s or ≥3 identical errors (simplified, no topic tracking)"""
         current_time = datetime.now()
         
         for room_id, context in self.conversation_history.items():
@@ -909,30 +1092,24 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
                 
                 # Only intervene for silence if it's been long enough and we haven't recently
                 if silence_duration >= self.silence_threshold:
-                    print(f"🔍 MONITORING: Silence detected in room {room_id} ({silence_duration:.1f}s ≥ {self.silence_threshold}s)")
+                    print(f"🔍 BACKGROUND MONITORING: Silence detected in room {room_id} ({silence_duration:.1f}s ≥ {self.silence_threshold}s)")
+                    print(f"   ✅ WILL INTERVENE: Calling silence intervention")
                     self._intervene_for_silence(room_id, context)
+                else:
+                    # Periodically log that we're monitoring but not intervening yet
+                    if int(silence_duration) % 10 == 0 and silence_duration > 10:  # Every 10 seconds after 10s
+                        print(f"🔍 BACKGROUND MONITORING: Silence in room {room_id} ({silence_duration:.1f}s < {self.silence_threshold}s threshold)")
+                        print(f"   🚫 WILL NOT INTERVENE: Waiting for {self.silence_threshold}s threshold")
             
             # Check for consecutive errors (≥3)
             if context.consecutive_errors >= self.error_threshold:
-                print(f"🔍 MONITORING: Repeated errors detected in room {room_id} ({context.consecutive_errors} ≥ {self.error_threshold})")
+                print(f"🔍 BACKGROUND MONITORING: Repeated errors detected in room {room_id} ({context.consecutive_errors} ≥ {self.error_threshold})")
+                print(f"   ✅ WILL INTERVENE: Calling error pattern intervention")
                 self._intervene_for_repeated_errors(room_id, context)
                 context.consecutive_errors = 0  # Reset after intervention
-            
-            # Check for misdirection (≥30 seconds discussing wrong idea)
-            if (context.current_discussion_topic and 
-                context.discussion_start_time and
-                context.current_discussion_topic != "general"):
-                
-                discussion_duration = (current_time - context.discussion_start_time).total_seconds()
-                
-                if discussion_duration >= self.misdirection_threshold:
-                    print(f"🔍 MONITORING: Potential misdirection in room {room_id} (discussing '{context.current_discussion_topic}' for {discussion_duration:.1f}s ≥ {self.misdirection_threshold}s)")
-                    # Check if this might be misdirection using AI analysis
-                    if self._detect_potential_misdirection(room_id, context):
-                        print(f"🎯 AI ANALYSIS: Misdirection confirmed for topic '{context.current_discussion_topic}'")
-                        self._intervene_for_misdirection(room_id, context)
-                    else:
-                        print(f"✅ AI ANALYSIS: Discussion about '{context.current_discussion_topic}' seems on track")
+            elif context.consecutive_errors > 0:
+                print(f"🔍 BACKGROUND MONITORING: Error count in room {room_id} ({context.consecutive_errors} < {self.error_threshold} threshold)")
+                print(f"   🚫 WILL NOT INTERVENE: Waiting for {self.error_threshold} consecutive errors")
     
     def _monitor_code_reviews(self):
         """Research: Issue check after each code block (every 5s)"""
@@ -975,27 +1152,30 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
     def _intervene_for_silence(self, room_id: str, context: ConversationContext):
         """Research: Intervene when silence ≥30s (smart, non-annoying version)"""
         if not self._should_send_intervention(context, 'silence'):
+            print(f"🚫 SILENCE INTERVENTION BLOCKED: Cooldown or other constraint for room {room_id}")
             return
         
-        # Escalate messages based on how many times we've intervened
+        print(f"✅ SENDING SILENCE INTERVENTION: Room {room_id}, escalation level {context.intervention_escalation_level}")
+        
+        # Escalate messages based on how many times we've intervened (VERY CONCISE)
         messages_by_level = [
-            # First attempt (gentle)
+            # First attempt (gentle, 2-4 words)
             [
-                "Would you like to share some of your thoughts?",
-                "I notice it's been quiet. What are you both thinking about?",
-                "Feel free to discuss your ideas out loud - it helps with pair programming!"
+                "Thoughts?",
+                "Ideas?", 
+                "Stuck?"
             ],
-            # Second attempt (more direct)
+            # Second attempt (more direct, 3-6 words)
             [
-                "It looks like you might be stuck. Would you like a hint?",
-                "Are you both still working on the problem? I'm here if you need help.",
-                "If you're thinking through the approach, feel free to talk it out!"
+                "Need help?",
+                "Want a hint?",
+                "Discuss your approach?"
             ],
-            # Third attempt (offer specific help)
+            # Third attempt (specific help, 4-8 words)
             [
-                "I'm here to help if you're stuck. Would you like me to suggest an approach?",
-                "Let me know if you'd like some guidance on the current problem.",
-                "If you're ready to move forward, I can provide some direction."
+                "Ready for guidance?",
+                "Want me to help?",
+                "Need a solution approach?"
             ]
         ]
         
@@ -1003,23 +1183,30 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         import random
         message = random.choice(messages_by_level[level])
         
+        print(f"   Message: {message}")
+        
         self.send_ai_message_text_only(room_id, message)
         self._mark_intervention_sent(context, 'silence')
     
     def _intervene_for_repeated_errors(self, room_id: str, context: ConversationContext):
         """Research: Intervene when ≥3 identical errors (smart, non-annoying version)"""
         if not self._should_send_intervention(context, 'repeated_errors'):
+            print(f"🚫 ERROR INTERVENTION BLOCKED: Cooldown or other constraint for room {room_id}")
             return
         
-        # Provide hints first, escalate to solutions
+        print(f"✅ SENDING ERROR INTERVENTION: Room {room_id}, escalation level {context.intervention_escalation_level}")
+        
+        # Provide hints first, escalate to solutions (VERY CONCISE)
         messages_by_level = [
-            "I notice you're hitting the same error repeatedly. Would you like a hint to move forward?",
-            "This error seems persistent. Let me provide a more specific hint to help you.",
-            "Since this error keeps occurring, would you like me to walk through the solution step by step?"
+            "Same error. Hint?",
+            "Error persists. Help?", 
+            "Walk through solution?"
         ]
         
         level = min(context.intervention_escalation_level, len(messages_by_level) - 1)
         message = messages_by_level[level]
+        
+        print(f"   Message: {message}")
         
         self.send_ai_message_text_only(room_id, message)
         self._mark_intervention_sent(context, 'repeated_errors')
@@ -1099,129 +1286,7 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         
         return True
     
-    def _detect_potential_misdirection(self, room_id: str, context: ConversationContext) -> bool:
-        """Use AI to detect if the current discussion might be misdirected"""
-        if not self.client:
-            return False  # Fallback: can't detect without AI
-        
-        # Get recent discussion context
-        recent_discussion = ""
-        for msg in context.messages[-5:]:
-            recent_discussion += f"{msg.username}: {msg.content}\n"
-        
-        # Create misdirection detection prompt
-        detection_prompt = f"""Analyze this pair programming conversation to detect potential misdirection.
-
-Problem Context:
-- Problem: {context.problem_title or "General coding"}
-- Language: {context.programming_language}
-- Current Discussion Topic: {context.current_discussion_topic}
-
-Recent Discussion:
-{recent_discussion}
-
-Code Context (if any):
-{context.code_context[:300] if context.code_context else "No code visible"}
-
-Question: Are the students discussing an approach or idea that is likely to be incorrect or ineffective for solving their problem?
-
-Look for signs like:
-- Discussing algorithms that don't fit the problem
-- Focusing on irrelevant details
-- Pursuing approaches that won't work
-- Misunderstanding the problem requirements
-- Going down rabbit holes
-
-Respond with ONLY "YES" if misdirection is likely, "NO" if discussion seems on track."""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an expert at detecting when students are going off track in programming discussions."},
-                    {"role": "user", "content": detection_prompt}
-                ],
-                max_tokens=10,
-                temperature=0.1
-            )
-            
-            ai_decision = response.choices[0].message.content.strip().upper()
-            return ai_decision == "YES"
-            
-        except Exception as e:
-            print(f"Error in misdirection detection: {e}")
-            return False
-    
-    def _intervene_for_misdirection(self, room_id: str, context: ConversationContext):
-        """Research: Intervene when discussing wrong idea for ≥30s (smart, non-annoying version)"""
-        if not self._should_send_intervention(context, 'misdirection'):
-            return
-        
-        # Generate contextual misdirection intervention
-        intervention_message = self._generate_misdirection_intervention(context)
-        
-        if intervention_message:
-            self.send_ai_message_text_only(room_id, intervention_message)
-            self._mark_intervention_sent(context, 'misdirection')
-            # Reset discussion tracking after intervention
-            context.current_discussion_topic = ""
-            context.discussion_start_time = None
-    
-    def _generate_misdirection_intervention(self, context: ConversationContext) -> str:
-        """Generate a helpful misdirection intervention message"""
-        if not self.client:
-            # Fallback messages when AI is not available
-            fallback_messages = [
-                f"I think there might be some issues with the current {context.current_discussion_topic} approach. What do you both think?",
-                "Let me pause you there - are you sure this approach will solve the problem? Maybe we should reconsider?",
-                "I'm wondering if this direction will lead to the solution. Could you double-check the problem requirements?",
-                "This approach might not be the most effective. What other strategies could you consider?"
-            ]
-            import random
-            return random.choice(fallback_messages)
-        
-        # Generate AI-powered intervention
-        recent_discussion = ""
-        for msg in context.messages[-5:]:
-            recent_discussion += f"{msg.username}: {msg.content}\n"
-        
-        intervention_prompt = f"""Generate a helpful intervention for students who may be going off track.
-
-Context:
-- Problem: {context.problem_title or "General coding"}
-- Language: {context.programming_language}
-- Topic they're discussing: {context.current_discussion_topic}
-- Code: {context.code_context[:300] if context.code_context else "No code"}
-
-Recent Discussion:
-{recent_discussion}
-
-Task: Create a gentle intervention that redirects them back to the right direction. Follow this format from research:
-"I think there might be some issue with idea X, since it is [reason], what do you think?"
-
-Requirements:
-- Be gentle and questioning, not authoritative
-- Explain why the current approach might have issues
-- Ask for their thoughts to maintain engagement
-- Keep it under 50 words
-- Don't give the solution directly"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a helpful AI assistant that gently redirects students when they're going off track."},
-                    {"role": "user", "content": intervention_prompt}
-                ],
-                max_tokens=60,
-                temperature=0.7
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            print(f"Error generating misdirection intervention: {e}")
-            return f"I think there might be some issues with the current {context.current_discussion_topic} approach. What do you both think?"
+    # Misdirection detection removed - centralized LLM handles all conversation analysis intelligently
 
     def get_intervention_status(self, room_id: str) -> Dict[str, Any]:
         """Get current intervention status for debugging/monitoring"""
