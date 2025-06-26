@@ -136,7 +136,7 @@ class AIAgent:
 
         
     def add_message_to_context(self, message_data: Dict[str, Any]):
-        """Add a new message to the conversation context with research-based tracking"""
+        """Add a new message to the conversation context with direct AI mention detection"""
         room_id = message_data.get('room')
         if not room_id:
             return
@@ -169,6 +169,16 @@ class AIAgent:
         
         # Cancel any pending intervention since user is active
         self._cancel_pending_intervention(room_id, "new message received")
+        
+        # Check for direct AI mention (@AI keyword) - PRIORITY RESPONSE
+        if self._is_direct_ai_mention(message.content):
+            print(f"🎯 DIRECT AI MENTION detected in room {room_id}: {message.content[:50]}...")
+            # Respond immediately without waiting for 5-second timer
+            self._handle_direct_ai_mention(room_id)
+            # DO NOT start timer for direct mentions - return early
+            if len(context.messages) > self.max_context_messages:
+                context.messages = context.messages[-self.max_context_messages:]
+            return
         
         # Keep only recent messages
         if len(context.messages) > self.max_context_messages:
@@ -480,14 +490,18 @@ class AIAgent:
     def process_message_sync(self, message_data: Dict[str, Any]):
         """Process a new message and potentially respond"""
         try:
-            # Add message to context (this will cancel any pending intervention)
+            # Check if this is a direct AI mention BEFORE adding to context
+            is_direct_mention = self._is_direct_ai_mention(message_data.get('content', ''))
+            
+            # Add message to context (this will handle direct mentions and return early)
             self.add_message_to_context(message_data)
             
-            # Get room_id and start new timer
-            room_id = message_data.get('room')
-            if room_id and room_id in self.conversation_history:
-                # Start new 5-second idle timer
-                self._schedule_idle_intervention(room_id)
+            # Only start timer for non-direct mentions
+            if not is_direct_mention:
+                room_id = message_data.get('room')
+                if room_id and room_id in self.conversation_history:
+                    # Start new 5-second idle timer
+                    self._schedule_idle_intervention(room_id)
                 
         except Exception as e:
             print(f"Error processing message in AI agent: {e}")
@@ -522,7 +536,7 @@ class AIAgent:
         greeting_messages = [
             # "Hi! I'm CodeBot, your AI pair programming assistant. I'll help with technical questions, encourage good planning, and facilitate your collaboration. Let's code together!",
             # "Hello! I'm here to support your pair programming session. I can provide hints when you're stuck, help with code review, and ensure both of you stay engaged. Ready to start?",
-            "Welcome! I'm CodeBot, designed to enhance your pair programming experience. I'll offer technical guidance and help maintain productive collaboration."
+            "Welcome! I'm CodeBob, designed to enhance your pair programming experience. I'll offer technical guidance and help maintain productive collaboration."
         ]
         
         import random
@@ -558,31 +572,77 @@ class AIAgent:
         for msg in context.messages[-5:]:
             recent_conversation += f"{msg.username}: {msg.content}\n"
         
-        # Simple comprehensive prompt
-        prompt = f"""You are CodeBot, an AI pair programming assistant. Should you help in this conversation?
+        # Check if the last message contains direct AI mention
+        last_message = context.messages[-1] if context.messages else None
+        is_direct_mention = last_message and self._is_direct_ai_mention(last_message.content)
+        
+        # Adjust prompt based on whether this is a direct mention
+        if is_direct_mention:
+            prompt = f"""You are CodeBot, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
 
-                    Problem Context:
-                    - Problem: {context.problem_title or "General coding"}
-                    - Language: {context.programming_language}
+                            Problem Context:
+                            - Problem: {context.problem_title or "General coding"}
+                            - Language: {context.programming_language}
 
-                    Recent Conversation:
-                    {recent_conversation}
+                            Recent Conversation:
+                            {recent_conversation}
 
-                    Code Context:
-                    {context.code_context[:300] if context.code_context else "No code visible"}
+                            Code Context:
+                            {context.code_context[:300] if context.code_context else "No code visible"}
 
-                    Decide if you should help:
-                    - Are they asking questions or need help? → YES
-                    - Are they stuck or confused? → YES  
-                    - Are they discussing well and making progress? → NO
+                            NATURAL TEACHING APPROACH - Be helpful while encouraging learning:
+                            - Mix different response types: hints, encouragement, specific guidance, questions
+                            - Be conversational and supportive, not just question-asking
+                            - Adapt to their level: sometimes give direct help when appropriate
+                            - Balance learning with actually being helpful
 
-                    Response format:
-                    - If you should help: "YES|[helpful message in 10-70 words - KEEP IT SHORT unless complex explanation needed]"
-                    - If they're doing fine: "NO"
+                            Response variety examples:
+                            - Direct help: "Try using array.map() instead of a for loop here"
+                            - Hint: "Look at the error message - it's telling you about a missing semicolon"
+                            - Encouragement: "You're close! The logic is right, just check your syntax"
+                            - Question: "What do you think that error means?"
+                            - Specific tip: "Console.log the variable to see what value it actually has"
 
-                    IMPORTANT: Prioritize SHORT, concise messages (10-30 words). Only use longer responses when absolutely necessary for clarity.
+                            Response format:
+                            - If you should help: "YES|[natural, helpful response that may include hints, tips, or direct guidance - 15-40 words]"
+                            - If inappropriate request: "NO"
 
-                    Your response:"""
+                            IMPORTANT: Be naturally helpful while encouraging learning. Don't always ask questions!
+
+                            Your response:"""
+        else:
+            prompt = f"""You are CodeBot, an AI pair programming assistant focused on LEARNING. Should you help in this conversation?
+
+                        Problem Context:
+                        - Problem: {context.problem_title or "General coding"}
+                        - Language: {context.programming_language}
+
+                        Recent Conversation:
+                        {recent_conversation}
+
+                        Code Context:
+                        {context.code_context[:300] if context.code_context else "No code visible"}
+
+                        NATURAL INTERVENTION - Help appropriately without being pushy:
+                        - If they're stuck or confused: Offer helpful hints or specific tips
+                        - If they're discussing actively: Let them work it out
+                        - If they need encouragement: Give positive reinforcement
+                        - If there's a clear issue: Point it out gently
+
+                        VARIED RESPONSE TYPES:
+                        - Helpful tips: "Try adding console.log to see what's happening"
+                        - Encouragement: "Good progress! You're on the right track"
+                        - Specific hints: "That error usually means a missing bracket"
+                        - Questions (sparingly): "What do you think might be causing that?"
+                        - Direct guidance when stuck: "The issue is likely in line 5"
+
+                        Response format:
+                        - If you should help: "YES|[natural, varied response - hints, tips, or encouragement in 10-30 words]"
+                        - If they're doing fine: "NO"
+
+                        IMPORTANT: Mix response types. Don't always ask questions - sometimes just give helpful tips!
+
+                        Your response:"""
 
         try:
             response = self.client.chat.completions.create(
@@ -591,7 +651,7 @@ class AIAgent:
                     {"role": "system", "content": "You are CodeBot, a helpful pair programming assistant. Only intervene when truly helpful."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=100,
+                max_tokens=150 if is_direct_mention else 100,  # Allow longer responses for direct mentions
                 temperature=0.7
             )
             
@@ -602,18 +662,63 @@ class AIAgent:
                 parts = llm_response.split("|", 1)
                 if len(parts) >= 2:
                     intervention_message = parts[1]
-                    print(f"✅ AI WILL INTERVENE: {intervention_message[:50]}...")
+                    mention_type = "DIRECT MENTION" if is_direct_mention else "IDLE INTERVENTION"
+                    print(f"✅ AI WILL INTERVENE ({mention_type}): {intervention_message[:50]}...")
                     return True, intervention_message
                 else:
                     print(f"❌ LLM response format error: {llm_response}")
                     return False, ""
             else:
-                print(f"🚫 AI WILL NOT INTERVENE: Users are discussing well")
+                mention_type = "direct mention" if is_direct_mention else "idle period"
+                print(f"🚫 AI WILL NOT INTERVENE: Decided not to respond to {mention_type}")
                 return False, ""
                 
         except Exception as e:
             print(f"❌ Error in AI decision: {e}")
             return False, ""
+    
+    def _is_direct_ai_mention(self, message_content: str) -> bool:
+        """Check if message contains direct AI mention keywords"""
+        # Split into words for exact word matching (more efficient and accurate)
+        words = message_content.lower().split()
+        
+        # Single-word AI mention keywords
+        ai_keywords = {
+            '@ai', '@codebot', 'codebot', 'bob', 'help'
+        }
+        
+        # Check if any word is an AI keyword
+        return any(word in ai_keywords for word in words)
+    
+    def _handle_direct_ai_mention(self, room_id: str):
+        """Handle direct AI mention - respond immediately bypassing ALL restrictions"""
+        context = self.conversation_history.get(room_id)
+        if not context:
+            return
+            
+        if not self.client:
+            print("🚫 AI cannot respond to direct mention: No LLM client available")
+            return
+            
+        print(f"🚀 BYPASSING ALL RESTRICTIONS for direct AI mention in room {room_id}")
+        
+        # Force AI decision for direct mention (no restrictions)
+        should_respond, message = self._centralized_ai_decision(context)
+        
+        if should_respond and message:
+            # Update AI response timestamp (but no cooldown enforced for direct mentions)
+            context.last_ai_response = datetime.now()
+            
+            # Send immediate AI response using proper chat message format
+            self.send_ai_message(room_id, message)
+            
+            print(f"✅ AI responded IMMEDIATELY to direct mention in room {room_id}: {message[:50]}...")
+        else:
+            # Even if LLM says no, we should respond to direct mentions with a helpful message
+            fallback_message = "I'm here to help! What specific question do you have about your code or programming problem?"
+            context.last_ai_response = datetime.now()
+            self.send_ai_message(room_id, fallback_message)
+            print(f"✅ AI responded with fallback to direct mention in room {room_id}")
     
     # Legacy complex intervention methods removed - replaced by centralized LLM decision
     # Legacy research-based intervention methods removed - all replaced by centralized LLM decision

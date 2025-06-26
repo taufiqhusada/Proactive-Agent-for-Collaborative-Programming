@@ -5,7 +5,7 @@
                 <span class="ai-emoji">🤖</span>
             </div>
             <div class="ai-info">
-                <div class="ai-name">CodeBot</div>
+                <div class="ai-name">CodeBob</div>
                 <div class="ai-status">
                     <span class="status-dot"></span>
                     AI Assistant Active
@@ -14,7 +14,7 @@
         </div>
         <div class="ai-description">
             <p class="ai-desc-text">
-                CodeBot is listening and can jump in to help!
+                CodeBob is listening and can jump in to help!
             </p>
         </div>
     </div>
