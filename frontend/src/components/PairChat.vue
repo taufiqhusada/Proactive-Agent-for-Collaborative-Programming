@@ -617,6 +617,36 @@ export default defineComponent({
                 isActive = true
             }
             
+            // Voice activity detection for timer cancellation
+            recognitionInstance.onspeechstart = () => {
+                console.log('🎤 VOICE ACTIVITY DETECTED - User started speaking')
+                
+                // Immediately notify backend to cancel any pending 5-second timers
+                if (props.socket && props.roomId) {
+                    props.socket.emit('voice_activity_detected', {
+                        room: props.roomId,
+                        userId: props.currentUserId,
+                        timestamp: new Date().toISOString(),
+                        event: 'speechstart'
+                    })
+                    console.log('📤 Notified backend of voice activity for timer cancellation')
+                }
+            }
+            
+            recognitionInstance.onspeechend = () => {
+                console.log('🎤 Voice activity ended - User stopped speaking')
+                
+                // Optional: Notify backend when voice activity ends
+                if (props.socket && props.roomId) {
+                    props.socket.emit('voice_activity_detected', {
+                        room: props.roomId,
+                        userId: props.currentUserId,
+                        timestamp: new Date().toISOString(),
+                        event: 'speechend'
+                    })
+                }
+            }
+            
             recognitionInstance.onresult = (event) => {
                 // CRITICAL: Ignore all speech recognition results while AI is speaking
                 if (isSpeaking.value) {

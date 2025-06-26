@@ -58,6 +58,10 @@ class ConversationContext:
     ai_generating_response: bool = False  # True if AI is currently generating a response
     ai_response_lock_time: Optional[datetime] = None  # When AI started generating response
     
+    # 5-second idle intervention tracking
+    last_message_time: Optional[datetime] = None  # When the last message was received
+    pending_intervention_task: Optional[Any] = None  # Asyncio task for pending intervention
+    
     def __post_init__(self):
         if self.user_participation is None:
             self.user_participation = {}
@@ -113,6 +117,164 @@ class AIAgent:
         # Centralized intervention tracking
         self.last_ai_intervention_time = None
         
+        # Set up persistent event loop for async operations
+        self._setup_persistent_event_loop()
+
+    def _setup_persistent_event_loop(self):
+        """Set up a persistent event loop for async operations"""
+        def run_event_loop():
+            self.async_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.async_loop)
+            print("🔄 Persistent event loop started for AI Agent async operations")
+            self.async_loop.run_forever()
+        
+        # Start event loop in background thread
+        self.async_thread = threading.Thread(target=run_event_loop, daemon=True)
+        self.async_thread.start()
+        
+        # Wait for loop to be ready
+        time.sleep(0.1)
+        print("✅ Persistent event loop ready for 5-second timers")
+    
+    def _cancel_pending_intervention(self, context: ConversationContext, room_id: str, reason: str):
+        """Safely cancel any pending intervention task with improved error handling"""
+        if not context.pending_intervention_task:
+            return
+            
+        try:
+            task = context.pending_intervention_task
+            
+            # Handle asyncio.Task (running in persistent event loop)
+            if hasattr(task, 'cancel') and hasattr(task, 'cancelled'):
+                if not task.done():
+                    task.cancel()
+                    print(f"🚫 CANCELLED intervention task ({reason}) in room {room_id}")
+                else:
+                    print(f"🔍 Intervention task already completed in room {room_id}")
+            
+            # Handle concurrent.futures.Future (from run_coroutine_threadsafe)
+            elif hasattr(task, 'cancel') and hasattr(task, 'done'):
+                if not task.done():
+                    task.cancel()
+                    print(f"🚫 CANCELLED intervention future ({reason}) in room {room_id}")
+                else:
+                    print(f"🔍 Intervention future already completed in room {room_id}")
+            
+            else:
+                print(f"⚠️  Unknown task type for intervention in room {room_id}: {type(task)}")
+                
+        except Exception as e:
+            print(f"⚠️  Error cancelling intervention task in room {room_id}: {e}")
+            print(f"   Task type: {type(context.pending_intervention_task)}")
+            print(f"   Reason: {reason}")
+        finally:
+            # Always clear the task reference
+            context.pending_intervention_task = None
+    
+    def _schedule_idle_intervention(self, context: ConversationContext, room_id: str):
+        """Schedule a 5-second idle intervention timer with improved error handling"""
+        # Double-check that no timer is already running (race condition prevention)
+        if context.pending_intervention_task:
+            print(f"⚠️  Timer already exists for room {room_id}, skipping new timer creation")
+            return
+        
+        async def delayed_intervention_check():
+            timer_id = f"timer_{room_id}_{int(datetime.now().timestamp())}"
+            try:
+                print(f"⏱️  Starting 5-second idle timer {timer_id} for room {room_id}")
+                
+                # Store start time for validation
+                timer_start_time = datetime.now()
+                
+                # Wait 5 seconds with periodic checks
+                for i in range(5):
+                    await asyncio.sleep(1.0)
+                    print(f"   Timer {timer_id}: {i+1}/5 seconds elapsed...")
+                    
+                    # Optional: Check if we should abort early (if context is cleared, etc.)
+                    if room_id not in self.conversation_history:
+                        print(f"🚫 Room {room_id} no longer exists, aborting timer {timer_id}")
+                        return
+                
+                print(f"⏰  5-second idle timer {timer_id} completed for room {room_id}")
+                
+                # Validate that we're still the active timer (not replaced by a newer one)
+                current_context = self.conversation_history.get(room_id)
+                if not current_context:
+                    print(f"🔄 Context for room {room_id} no longer exists, skipping intervention")
+                    return
+                
+                # Check if conversation is still idle (more robust validation)
+                if current_context.last_message_time:
+                    time_since_last = (datetime.now() - current_context.last_message_time).total_seconds()
+                    time_since_timer_start = (datetime.now() - timer_start_time).total_seconds()
+                    
+                    # Only proceed if:
+                    # 1. At least 5 seconds since last message
+                    # 2. Timer ran for approximately 5 seconds
+                    # 3. No new messages arrived during timer execution
+                    if time_since_last >= 5.0 and 4.5 <= time_since_timer_start <= 6.0:
+                        print(f"✅ 5-second idle period confirmed for room {room_id}")
+                        print(f"   Time since last message: {time_since_last:.1f}s")
+                        print(f"   Timer execution time: {time_since_timer_start:.1f}s")
+                        
+                        # Check if we should respond (only after confirmed idle period)
+                        if self.should_respond(room_id):
+                            print(f"🤖 AI will respond after 5-second idle period in room {room_id}")
+                            # Generate and send response asynchronously
+                            response = await self.generate_response(room_id)
+                            
+                            if response:
+                                await self.send_ai_message_with_audio(room_id, response)
+                        else:
+                            print(f"🚫 No intervention needed after 5-second idle period for room {room_id}")
+                    else:
+                        print(f"🔄 Timing validation failed for room {room_id}")
+                        print(f"   Time since last message: {time_since_last:.1f}s (need ≥5.0)")
+                        print(f"   Timer execution time: {time_since_timer_start:.1f}s (need 4.5-6.0)")
+                        
+            except asyncio.CancelledError:
+                print(f"🚫 Intervention timer {timer_id} cancelled for room {room_id}")
+                raise  # Re-raise to properly handle cancellation
+            except Exception as e:
+                print(f"❌ Error in delayed intervention check {timer_id}: {e}")
+                import traceback
+                print(f"   Traceback: {traceback.format_exc()}")
+            finally:
+                # Clean up timer reference if we're still the active timer
+                try:
+                    current_context = self.conversation_history.get(room_id)
+                    if current_context and current_context.pending_intervention_task:
+                        # Only clear if this is the same task (avoid clearing newer timers)
+                        task = current_context.pending_intervention_task
+                        if hasattr(task, 'done') and task.done():
+                            current_context.pending_intervention_task = None
+                            print(f"🧹 Cleaned up completed timer reference for room {room_id}")
+                except Exception as cleanup_error:
+                    print(f"⚠️  Error during timer cleanup: {cleanup_error}")
+        
+        # Schedule the timer using persistent event loop (improved scheduling)
+        try:
+            if hasattr(self, 'async_loop') and self.async_loop.is_running():
+                # Use persistent event loop for reliable timer execution
+                future = asyncio.run_coroutine_threadsafe(delayed_intervention_check(), self.async_loop)
+                context.pending_intervention_task = future
+                print(f"📅 Scheduled 5-second timer on persistent event loop for room {room_id}")
+            else:
+                # Fallback: try to use current event loop
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    task = current_loop.create_task(delayed_intervention_check())
+                    context.pending_intervention_task = task
+                    print(f"📅 Scheduled 5-second timer on current event loop for room {room_id}")
+                except RuntimeError:
+                    # No event loop available, skip timer (warn but don't crash)
+                    print(f"⚠️  No event loop available for 5-second timer in room {room_id}")
+                    print(f"   Timer functionality will be disabled for this message")
+                    
+        except Exception as e:
+            print(f"❌ Failed to schedule intervention timer for room {room_id}: {e}")
+            print(f"   5-second idle functionality will be disabled for this message")
 
         
     def add_message_to_context(self, message_data: Dict[str, Any]):
@@ -148,6 +310,14 @@ class AIAgent:
         current_time = datetime.now()
         context.last_activity_time = current_time
         context.silence_start = None  # Reset silence tracking
+        
+        # NEW: Update last message time for 5-second idle tracking
+        print("curren time when adding message to context:", current_time)
+        context.last_message_time = current_time
+        
+        # NEW: Cancel any pending intervention if new message arrives (improved)
+        if context.pending_intervention_task:
+            self._cancel_pending_intervention(context, room_id, "new message received")
         
         # Smart intervention management: Reset pending state when users respond
         if context.pending_ai_response:
@@ -679,28 +849,37 @@ Provide helpful technical guidance while maintaining their learning autonomy."""
         if not room_id:
             return
             
-        # Add message to context
+        # Add message to context (this will cancel any pending intervention)
         self.add_message_to_context(message_data)
         
-
-        # Check if we should respond
-        if self.should_respond(room_id):
-            print("AI will respond to the message")
-            # Generate response asynchronously
-            response = await self.generate_response(room_id)
+        # Get context for intervention scheduling (after message is added)
+        if room_id not in self.conversation_history:
+            return
             
-            if response:
-                # Send the response using async version
-                await self.send_ai_message_with_audio(room_id, response)
+        context = self.conversation_history[room_id]
+        
+        # Start new 5-second idle timer (improved with race condition prevention)
+        self._schedule_idle_intervention(context, room_id)
                 
     def process_message_sync(self, message_data: Dict[str, Any]):
-        """Synchronous wrapper for processing messages"""
+        """Synchronous wrapper for processing messages - uses persistent event loop"""
         try:
-            # Run the async function in a new event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.process_message(message_data))
-            loop.close()
+            if hasattr(self, 'async_loop') and self.async_loop.is_running():
+                # Use persistent event loop to avoid destroying timer tasks
+                future = asyncio.run_coroutine_threadsafe(
+                    self.process_message(message_data), 
+                    self.async_loop
+                )
+                # Don't wait for completion - let it run asynchronously
+                print(f"📤 Message processing scheduled on persistent event loop")
+            else:
+                # Fallback to creating new event loop if persistent one isn't available
+                print("⚠️  Persistent event loop not available, falling back to temporary loop")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.process_message(message_data))
+                loop.close()
+                
         except Exception as e:
             print(f"Error processing message in AI agent: {e}")
             # Continue processing other messages
@@ -1161,20 +1340,14 @@ Respond with ONLY:
         messages_by_level = [
             # First attempt (gentle, 2-4 words)
             [
-                "Thoughts?",
-                "Ideas?", 
-                "Stuck?"
+                "Still Stuck?"
             ],
             # Second attempt (more direct, 3-6 words)
             [
-                "Need help?",
                 "Want a hint?",
-                "Discuss your approach?"
             ],
             # Third attempt (specific help, 4-8 words)
             [
-                "Ready for guidance?",
-                "Want me to help?",
                 "Need a solution approach?"
             ]
         ]

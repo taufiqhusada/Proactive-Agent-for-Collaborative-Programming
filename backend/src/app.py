@@ -198,6 +198,34 @@ def ws_ai_audio_playback_complete(data):
     # Release AI generation lock now that audio is actually finished
     ai_agent.release_generation_lock(room, message_id)
 
+@socketio.on("voice_activity_detected", namespace="/ws")
+def ws_voice_activity_detected(data):
+    """
+    Handle voice activity detection from frontend to cancel pending 5-second timers.
+    This provides much faster timer cancellation than waiting for completed messages.
+    """
+    room = data["room"]
+    user_id = data["userId"]
+    event_type = data["event"]  # 'speechstart' or 'speechend'
+    timestamp = data["timestamp"]
+    
+    print(f"🎤 Voice activity detected: {event_type} from user {user_id} in room {room}")
+    
+    # Only cancel timers on speech start (when user begins speaking)
+    if event_type == 'speechstart':
+        print(f"🚫 Cancelling pending 5-second timers due to voice activity in room {room}")
+        
+        # Cancel any pending intervention timers immediately
+        if room in ai_agent.conversation_history:
+            context = ai_agent.conversation_history[room]
+            if context.pending_intervention_task:
+                ai_agent._cancel_pending_intervention(context, room, "voice activity detected")
+                print(f"✅ Successfully cancelled pending timer due to voice activity in room {room}")
+            else:
+                print(f"🔍 No pending timer to cancel in room {room}")
+        else:
+            print(f"⚠️ No conversation context found for room {room}")
+
 @socketio.on("disconnect", namespace="/ws")
 def ws_disconnect():
     print(f"WS client {request.sid} disconnected")
