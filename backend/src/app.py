@@ -218,8 +218,8 @@ def ws_voice_activity_detected(data):
         # Cancel any pending intervention timers immediately
         if room in ai_agent.conversation_history:
             context = ai_agent.conversation_history[room]
-            if context.pending_intervention_task:
-                ai_agent._cancel_pending_intervention(context, room, "voice activity detected")
+            if room in ai_agent.pending_timers:
+                ai_agent._cancel_pending_intervention(room, "voice activity detected")
                 print(f"✅ Successfully cancelled pending timer due to voice activity in room {room}")
             else:
                 print(f"🔍 No pending timer to cancel in room {room}")
