@@ -42,6 +42,7 @@
                 <input 
                     v-model="newMessage" 
                     @keyup.enter="sendMessage"
+                    @input="handleTypingActivity"
                     placeholder="Type your message..."
                     class="message-input"
                     :disabled="!isConnected"
@@ -175,6 +176,11 @@ export default defineComponent({
         const aiVoiceEnabled = ref(true) // Can be toggled by user
         let currentUtterance = null
 
+        // Chat typing state
+        const isTyping = ref(false)
+        let typingTimer = null
+        const TYPING_TIMEOUT = 1000 // Stop typing detection after 1 second of no input
+
         // PCM Audio Context for real-time streaming
         let audioContext = null
         let currentAudioSource = null
@@ -196,8 +202,55 @@ export default defineComponent({
             })
         }
 
+        // Chat typing detection functions
+        const handleTypingActivity = () => {
+            // Only trigger typing detection if user actually has text in the field
+            if (newMessage.value.trim()) {
+                if (!isTyping.value) {
+                    handleTypingStart()
+                }
+                
+                // Reset the typing timer to detect when user stops typing
+                if (typingTimer) {
+                    clearTimeout(typingTimer)
+                }
+                
+                // Set a timer to reset typing state after no input
+                typingTimer = setTimeout(() => {
+                    isTyping.value = false
+                    if (typingTimer) {
+                        clearTimeout(typingTimer)
+                        typingTimer = null
+                    }
+                }, TYPING_TIMEOUT)
+            }
+        }
+
+        const handleTypingStart = () => {
+            if (!isTyping.value && props.socket && props.roomId) {
+                isTyping.value = true
+                console.log('⌨️  CHAT TYPING STARTED - User is composing message')
+                
+                // Immediately notify backend to cancel any pending 5-second timers
+                props.socket.emit('chat_typing_activity', {
+                    room: props.roomId,
+                    userId: props.currentUserId,
+                    timestamp: new Date().toISOString(),
+                    event: 'typing_start'
+                })
+                console.log('📤 Notified backend of chat typing activity for timer cancellation')
+            }
+        }
+
         const sendMessage = () => {
             if (!newMessage.value.trim() || !props.socket) return
+
+            // Reset typing state since message is being sent
+            isTyping.value = false
+            if (typingTimer) {
+                clearTimeout(typingTimer)
+                typingTimer = null
+            }
 
             const message = {
                 id: Date.now(),
@@ -1421,6 +1474,11 @@ export default defineComponent({
                 clearInterval(speechProcessor)
             }
             
+            // Clear typing timer
+            if (typingTimer) {
+                clearTimeout(typingTimer)
+            }
+            
             if (props.socket) {
                 props.socket.off('chat_message', handleIncomingMessage)
                 props.socket.off('user_joined', handleUserJoined)
@@ -1452,11 +1510,14 @@ export default defineComponent({
             ttsSupported,
             isSpeaking,
             aiVoiceEnabled,
+            isTyping,
             formatTime,
             sendMessage,
             toggleAutoRecording,
             toggleAIVoice,
-            dismissTooltip
+            dismissTooltip,
+            handleTypingActivity,
+            handleTypingStart
         }
     }
 })

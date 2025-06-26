@@ -196,6 +196,10 @@ class AIAgent:
         context.code_context = code
         context.programming_language = language
         
+        # Cancel any pending intervention since user is actively coding
+        self._cancel_pending_intervention(room_id, "code update received")
+        print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
+        
     def update_problem_context(self, room_id: str, problem_title: str, problem_description: str):
         """Update the current problem description for a room"""
         if room_id not in self.conversation_history:

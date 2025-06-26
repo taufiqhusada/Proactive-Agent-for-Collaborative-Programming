@@ -226,6 +226,34 @@ def ws_voice_activity_detected(data):
         else:
             print(f"⚠️ No conversation context found for room {room}")
 
+@socketio.on("chat_typing_activity", namespace="/ws")
+def ws_chat_typing_activity(data):
+    """
+    Handle chat typing activity detection from frontend to cancel pending 5-second timers.
+    This provides immediate timer cancellation when users start typing in chat input.
+    """
+    room = data["room"]
+    user_id = data["userId"]
+    event_type = data["event"]  # 'typing_start'
+    timestamp = data["timestamp"]
+    
+    print(f"⌨️  Chat typing activity detected: {event_type} from user {user_id} in room {room}")
+    
+    # Only cancel timers when user starts typing (active engagement)
+    if event_type == 'typing_start':
+        print(f"🚫 Cancelling pending 5-second timers due to chat typing activity in room {room}")
+        
+        # Cancel any pending intervention timers immediately
+        if room in ai_agent.conversation_history:
+            context = ai_agent.conversation_history[room]
+            if room in ai_agent.pending_timers:
+                ai_agent._cancel_pending_intervention(room, "chat typing activity detected")
+                print(f"✅ Successfully cancelled pending timer due to chat typing in room {room}")
+            else:
+                print(f"🔍 No pending timer to cancel in room {room}")
+        else:
+            print(f"⚠️ No conversation context found for room {room}")
+
 @socketio.on("disconnect", namespace="/ws")
 def ws_disconnect():
     print(f"WS client {request.sid} disconnected")
