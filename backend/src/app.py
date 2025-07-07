@@ -303,6 +303,188 @@ def run_code():
     )
     return jsonify(stdout=proc.stdout, stderr=proc.stderr)
 
+@app.route('/api/run-code', methods=['POST'])
+def execute_code_endpoint():
+    """Execute code in specified language and return output"""
+    try:
+        data = request.json
+        code = data.get('code', '')
+        language = data.get('language', 'python')
+        
+        print(f"🚀 Code Execution Request:")
+        print(f"  Language: {language}")
+        print(f"  Code: {code[:100]}...")
+        
+        if not code.strip():
+            return jsonify({'error': 'No code provided'}), 400
+        
+        # Execute code based on language
+        result = execute_code(code, language)
+        
+        print(f"✅ Execution Result: {result}")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ Error executing code: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def execute_code(code, language):
+    """Execute code in the specified language"""
+    import tempfile
+    import os
+    import subprocess
+    import time
+    
+    start_time = time.time()
+    
+    try:
+        if language == 'python':
+            # Execute Python code
+            proc = subprocess.run(
+                ["python", "-c", code],
+                capture_output=True, 
+                text=True, 
+                timeout=10,
+                cwd=tempfile.gettempdir()
+            )
+            
+        elif language == 'javascript':
+            # Execute JavaScript code using Node.js
+            proc = subprocess.run(
+                ["node", "-e", code],
+                capture_output=True, 
+                text=True, 
+                timeout=10,
+                cwd=tempfile.gettempdir()
+            )
+            
+        elif language == 'java':
+            # Execute Java code (simplified - single class)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.java', delete=False) as f:
+                # Simple wrapper for Java code
+                if 'public class' not in code:
+                    java_code = f'''
+public class TempClass {{
+    public static void main(String[] args) {{
+        {code}
+    }}
+}}'''
+                else:
+                    java_code = code
+                
+                f.write(java_code)
+                java_file = f.name
+            
+            try:
+                # Compile Java
+                compile_proc = subprocess.run(
+                    ["javac", java_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=tempfile.gettempdir()
+                )
+                
+                if compile_proc.returncode != 0:
+                    return {
+                        'output': '',
+                        'error': f'Compilation error: {compile_proc.stderr}',
+                        'exitCode': compile_proc.returncode,
+                        'executionTime': (time.time() - start_time) * 1000
+                    }
+                
+                # Run Java
+                class_name = os.path.splitext(os.path.basename(java_file))[0]
+                proc = subprocess.run(
+                    ["java", "-cp", tempfile.gettempdir(), class_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=tempfile.gettempdir()
+                )
+                
+            finally:
+                # Clean up
+                try:
+                    os.unlink(java_file)
+                    os.unlink(java_file.replace('.java', '.class'))
+                except:
+                    pass
+                    
+        elif language == 'cpp':
+            # Execute C++ code
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
+                f.write(code)
+                cpp_file = f.name
+            
+            try:
+                # Compile C++
+                exe_file = cpp_file.replace('.cpp', '.exe')
+                compile_proc = subprocess.run(
+                    ["g++", cpp_file, "-o", exe_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=tempfile.gettempdir()
+                )
+                
+                if compile_proc.returncode != 0:
+                    return {
+                        'output': '',
+                        'error': f'Compilation error: {compile_proc.stderr}',
+                        'exitCode': compile_proc.returncode,
+                        'executionTime': (time.time() - start_time) * 1000
+                    }
+                
+                # Run C++
+                proc = subprocess.run(
+                    [exe_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=tempfile.gettempdir()
+                )
+                
+            finally:
+                # Clean up
+                try:
+                    os.unlink(cpp_file)
+                    os.unlink(exe_file)
+                except:
+                    pass
+                    
+        else:
+            return {
+                'output': '',
+                'error': f'Unsupported language: {language}',
+                'exitCode': 1,
+                'executionTime': 0
+            }
+        
+        execution_time = (time.time() - start_time) * 1000
+        
+        return {
+            'output': proc.stdout,
+            'error': proc.stderr,
+            'exitCode': proc.returncode,
+            'executionTime': execution_time
+        }
+        
+    except subprocess.TimeoutExpired:
+        return {
+            'output': '',
+            'error': 'Execution timeout (10 seconds)',
+            'exitCode': 124,
+            'executionTime': 10000
+        }
+    except Exception as e:
+        return {
+            'output': '',
+            'error': str(e),
+            'exitCode': 1,
+            'executionTime': (time.time() - start_time) * 1000
+        }
+
 @app.route('/api/analyze-code-block', methods=['POST'])
 def analyze_code_block():
     """Analyze a code block for potential issues and suggestions"""

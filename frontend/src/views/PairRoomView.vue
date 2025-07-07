@@ -44,6 +44,12 @@
                         @change="handleCodeChange"
                         class="code-editor" />
                 </div>
+                
+                <!-- Code Runner -->
+                <CodeRunner 
+                    :code="code"
+                    :language="selectedLanguage"
+                />
             </div>
 
             <!-- Right Panel: Chat -->
@@ -91,6 +97,7 @@ import ProblemDescription from '@/components/ProblemDescription.vue'
 import PairChat from '@/components/PairChat.vue'
 import AIAgentStatus from '@/components/AIAgentStatus.vue'
 import CodeIssuePanel from '@/components/CodeIssuePanel.vue'
+import CodeRunner from '@/components/CodeRunner.vue'
 
 export default defineComponent({
     components: {
@@ -99,6 +106,7 @@ export default defineComponent({
         PairChat,
         AIAgentStatus,
         CodeIssuePanel,
+        CodeRunner,
     },
 
     setup() {
