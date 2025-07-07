@@ -13,6 +13,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from services.ai_agent import init_ai_agent, get_ai_agent
+from services.scaffolding_service import ScaffoldingService
 
 load_dotenv()
 
@@ -52,8 +53,30 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Initialize AI Agent
+# Initialize AI Agent and Scaffolding Service
 ai_agent = init_ai_agent(socketio)
+scaffolding_service = ScaffoldingService()
+
+# Track active scaffolding requests to prevent duplicates
+active_scaffolding_requests = {}  # {comment_id: {'timestamp': time, 'user_id': request.sid}}
+SCAFFOLDING_LOCK_TIMEOUT = 10  # seconds
+
+def cleanup_expired_scaffolding_locks():
+    """Remove expired scaffolding locks"""
+    current_time = time.time()
+    expired_keys = []
+    
+    for comment_id, lock_info in active_scaffolding_requests.items():
+        if current_time - lock_info['timestamp'] > SCAFFOLDING_LOCK_TIMEOUT:
+            expired_keys.append(comment_id)
+    
+    for key in expired_keys:
+        print(f"🧹 Cleaning up expired scaffolding lock: {key}")
+        del active_scaffolding_requests[key]
+
+def create_comment_id(comment_line, cursor_line, language):
+    """Create a unique identifier for a scaffolding request"""
+    return f"{language}:{cursor_line}:{comment_line.strip()}"
 
 # WebSocket handlers
 @socketio.on("connect", namespace="/ws")
@@ -555,6 +578,100 @@ def analyze_code_block():
     except Exception as e:
         print(f"Error analyzing code block: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-scaffolding', methods=['POST'])
+def generate_scaffolding():
+    """Generate code scaffolding using LLM based on user comments"""
+    try:
+        data = request.json
+        code = data.get('code', '')
+        language = data.get('language', 'python')
+        cursor_line = data.get('cursorLine', 0)
+        
+        print(f"🏗️  Scaffolding Request:")
+        print(f"  Language: {language}")
+        print(f"  Cursor Line: {cursor_line}")
+        
+        # Clean up expired locks first
+        cleanup_expired_scaffolding_locks()
+        
+        # Get the comment line
+        lines = code.split('\n')
+        if cursor_line >= len(lines):
+            return jsonify({
+                'hasScaffolding': False,
+                'message': 'Invalid cursor line'
+            })
+        
+        comment_line = lines[cursor_line]
+        
+        # Create unique identifier for this scaffolding request
+        comment_id = create_comment_id(comment_line, cursor_line, language)
+        current_time = time.time()
+        
+        # Check if this comment is already being processed
+        if comment_id in active_scaffolding_requests:
+            existing_lock = active_scaffolding_requests[comment_id]
+            time_since_lock = current_time - existing_lock['timestamp']
+            
+            if time_since_lock < SCAFFOLDING_LOCK_TIMEOUT:
+                print(f"🚫 Scaffolding already in progress for: {comment_line.strip()}")
+                return jsonify({
+                    'hasScaffolding': False,
+                    'message': 'Scaffolding already in progress for this comment',
+                    'isLocked': True,
+                    'lockHolder': existing_lock['user_id'],
+                    'timeRemaining': SCAFFOLDING_LOCK_TIMEOUT - time_since_lock
+                })
+        
+        # Acquire lock for this scaffolding request
+        active_scaffolding_requests[comment_id] = {
+            'timestamp': current_time,
+            'user_id': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        }
+        
+        print(f"🔒 Acquired scaffolding lock for: {comment_line.strip()}")
+        
+        try:
+            # Use LLM to generate scaffolding
+            result = scaffolding_service.generate_scaffolding(comment_line, language, code)
+            
+            if not result:
+                # Release lock on no scaffolding
+                if comment_id in active_scaffolding_requests:
+                    del active_scaffolding_requests[comment_id]
+                    
+                return jsonify({
+                    'hasScaffolding': False,
+                    'message': 'No scaffolding pattern detected for this comment'
+                })
+            
+            # Add line number info for replacement
+            result['replaceLineRange'] = {
+                'start': cursor_line,
+                'end': cursor_line + 1
+            }
+            
+            print(f"✅ Generated scaffolding using LLM")
+            
+            # Release lock on success
+            if comment_id in active_scaffolding_requests:
+                del active_scaffolding_requests[comment_id]
+                
+            return jsonify(result)
+            
+        except Exception as scaffolding_error:
+            # Release lock on error
+            if comment_id in active_scaffolding_requests:
+                del active_scaffolding_requests[comment_id]
+            raise scaffolding_error
+        
+    except Exception as e:
+        print(f"❌ Error generating scaffolding: {e}")
+        return jsonify({
+            'error': str(e),
+            'hasScaffolding': False
+        }), 500
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)

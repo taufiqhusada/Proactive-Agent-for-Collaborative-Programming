@@ -78,6 +78,14 @@
             @explain-issue="onExplainIssue"
             @dismissed="onCodeAnalysisDismissed"
         />
+        
+        <!-- Simple Scaffolding Notification -->
+        <div v-if="showScaffoldingNotification" class="scaffolding-notification">
+            <div class="notification-content">
+                <span class="notification-icon">🏗️</span>
+                <span class="notification-text">{{ scaffoldingNotificationText }}</span>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -134,6 +142,10 @@ export default defineComponent({
         const analysisDebounceTimer = ref(null)
         const userTypingTimer = ref(null)
         const lastTypingTime = ref(0)
+        
+        // Scaffolding notification state
+        const showScaffoldingNotification = ref(false)
+        const scaffoldingNotificationText = ref('')
         
         // Enhanced detection state
         const consecutiveEnters = ref(0)
@@ -676,6 +688,41 @@ export default defineComponent({
             socket.on('connect_error', (error) => {
                 console.error('Socket connection error:', error)
             })
+            
+            // Scaffolding coordination events
+            socket.on('scaffolding-lock-request', (data) => {
+                if (data.userId !== socket.id) {
+                    console.log('📡 Received scaffolding lock request from another user:', data.commentId)
+                    // Mark as active to prevent our own attempts
+                    activeScaffoldingRequests.value.add(data.commentId)
+                    scaffoldingLocks.value.set(data.commentId, data.userId)
+                }
+            })
+            
+            socket.on('scaffolding-lock-acquired', (data) => {
+                if (data.userId !== socket.id) {
+                    console.log('📡 Another user acquired scaffolding lock:', data.commentId)
+                    activeScaffoldingRequests.value.add(data.commentId)
+                    scaffoldingLocks.value.set(data.commentId, data.userId)
+                }
+            })
+            
+            socket.on('scaffolding-completed', (data) => {
+                if (data.userId !== socket.id) {
+                    console.log('📡 Scaffolding completed by another user:', data.commentId)
+                    // Mark as processed to prevent duplicate attempts
+                    processedComments.value.add(data.commentId)
+                    lastProcessedComment.value = data.commentId
+                }
+            })
+            
+            socket.on('scaffolding-lock-released', (data) => {
+                if (data.userId !== socket.id) {
+                    console.log('📡 Scaffolding lock released by another user:', data.commentId)
+                    activeScaffoldingRequests.value.delete(data.commentId)
+                    scaffoldingLocks.value.delete(data.commentId)
+                }
+            })
 
             return () => {
                 socket.off('connect')
@@ -685,6 +732,10 @@ export default defineComponent({
                 socket.off('user_disconnected')
                 socket.off('code_execution_result')
                 socket.off('connect_error')
+                socket.off('scaffolding-lock-request')
+                socket.off('scaffolding-lock-acquired')
+                socket.off('scaffolding-completed')
+                socket.off('scaffolding-lock-released')
                 socket.emit('leave', { room: roomId })
                 
                 // Clean up keyboard event listener
@@ -1122,6 +1173,282 @@ export default defineComponent({
         // Create ref for PairChat component
         const pairChat = ref(null)
         
+        // ========================
+        // SIMPLIFIED SCAFFOLDING FUNCTIONALITY
+        // ========================
+        
+        const scaffoldingTimer = ref(null)
+        const processedComments = ref(new Set()) // Track already processed comments
+        const lastProcessedComment = ref('') // Track the last comment we processed
+        const activeScaffoldingRequests = ref(new Set()) // Track ongoing scaffolding requests across users
+        const scaffoldingLocks = ref(new Map()) // Track who is processing which comment
+        
+        const detectScaffoldingTrigger = (newCode, oldCode) => {
+            const newLines = newCode.split('\n')
+            const oldLines = oldCode.split('\n')
+            
+            // Find the line that was just modified
+            let modifiedLine = -1
+            
+            if (newLines.length > oldLines.length) {
+                // New line added
+                modifiedLine = oldLines.length
+            } else {
+                // Existing line modified
+                for (let i = 0; i < Math.min(newLines.length, oldLines.length); i++) {
+                    if (newLines[i] !== oldLines[i]) {
+                        modifiedLine = i
+                        break
+                    }
+                }
+            }
+            
+            if (modifiedLine >= 0 && modifiedLine < newLines.length) {
+                const line = newLines[modifiedLine].trim()
+                
+                // Check if line starts with comment and has content
+                const commentPrefixes = {
+                    'python': '#',
+                    'javascript': '//',
+                    'java': '//',
+                    'cpp': '//'
+                }
+                
+                const prefix = commentPrefixes[selectedLanguage.value] || '#'
+                
+                // Check if line starts with comment and has content
+                if (line.startsWith(prefix) && line.length > prefix.length + 1) {
+                    // Skip TODO comments - these are typically generated by scaffolding
+                    const commentContent = line.substring(prefix.length).trim().toLowerCase()
+                    if (commentContent.startsWith('todo:') || commentContent.startsWith('todo ')) {
+                        console.log('🚫 Skipping TODO comment (likely from scaffolding):', line)
+                        return
+                    }
+                    
+                    // Skip other common non-scaffolding comments
+                    const skipPatterns = [
+                        'fixme:', 'hack:', 'note:', 'warning:', 'bug:', 'deprecated:',
+                        'end of', 'start of', 'this is', 'this will', 'this should'
+                    ]
+                    
+                    if (skipPatterns.some(pattern => commentContent.includes(pattern))) {
+                        console.log('🚫 Skipping descriptive comment:', line)
+                        return
+                    }
+                    // Create a unique identifier for this comment (line content + position)
+                    const commentId = `${modifiedLine}:${line}`
+                    
+                    // Check if we already processed this exact comment
+                    if (processedComments.value.has(commentId) || lastProcessedComment.value === commentId) {
+                        console.log('🚫 Skipping duplicate scaffolding for:', line)
+                        return
+                    }
+                    
+                    // Check if another user is already processing this comment
+                    if (activeScaffoldingRequests.value.has(commentId)) {
+                        console.log('🚫 Another user is already processing scaffolding for:', line)
+                        return
+                    }
+                    
+                    console.log('🏗️ Comment detected, starting 2s timer:', line)
+                    
+                    // Clear existing timer
+                    if (scaffoldingTimer.value) {
+                        clearTimeout(scaffoldingTimer.value)
+                    }
+                    
+                    // Start 2 second timer
+                    scaffoldingTimer.value = setTimeout(() => {
+                        console.log('⏰ 2s timer expired, attempting to claim scaffolding lock...')
+                        attemptScaffoldingLock(newCode, modifiedLine, commentId)
+                    }, 2000)
+                }
+            }
+        }
+        
+        const attemptScaffoldingLock = (code, cursorLine, commentId) => {
+            // Try to claim the lock by broadcasting to other users
+            socket.emit('scaffolding-lock-request', {
+                room: roomId,
+                userId: socket.id,
+                commentId: commentId,
+                timestamp: Date.now()
+            })
+            
+            // Wait a short time to see if anyone else is already processing
+            setTimeout(() => {
+                // Check if we got the lock (no one else claimed it first)
+                if (!activeScaffoldingRequests.value.has(commentId) || 
+                    scaffoldingLocks.value.get(commentId) === socket.id) {
+                    
+                    console.log('🔒 Acquired scaffolding lock for:', commentId)
+                    activeScaffoldingRequests.value.add(commentId)
+                    scaffoldingLocks.value.set(commentId, socket.id)
+                    
+                    // Broadcast that we're processing this
+                    socket.emit('scaffolding-lock-acquired', {
+                        room: roomId,
+                        userId: socket.id,
+                        commentId: commentId
+                    })
+                    
+                    requestScaffolding(code, cursorLine, commentId)
+                } else {
+                    console.log('🚫 Failed to acquire scaffolding lock, another user got it first')
+                }
+            }, 100) // Small delay to allow race condition resolution
+        }
+        
+        const requestScaffolding = async (code, cursorLine, commentId) => {
+            try {
+                console.log('🔮 Requesting LLM scaffolding for line:', cursorLine)
+                
+                const response = await fetch('/api/generate-scaffolding', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: code,
+                        language: selectedLanguage.value,
+                        cursorLine: cursorLine
+                    })
+                })
+                
+                const result = await response.json()
+                
+                if (result.isLocked) {
+                    console.log('🚫 Backend says scaffolding is locked by another user:', result.message)
+                    // Another user is already processing this, mark as processed to avoid retries
+                    processedComments.value.add(commentId)
+                    return
+                }
+                
+                if (result.hasScaffolding) {
+                    console.log('✅ LLM generated scaffolding:', result)
+                    
+                    // Mark this comment as processed
+                    processedComments.value.add(commentId)
+                    lastProcessedComment.value = commentId
+                    
+                    showScaffoldingSuggestion(result, cursorLine)
+                    
+                    // Broadcast scaffolding completion to other users
+                    socket.emit('scaffolding-completed', {
+                        room: roomId,
+                        userId: socket.id,
+                        commentId: commentId,
+                        scaffoldingCode: result.scaffoldingCode,
+                        cursorLine: cursorLine
+                    })
+                } else {
+                    console.log('ℹ️ LLM said no scaffolding needed:', result.message)
+                }
+                
+                // Release the lock
+                activeScaffoldingRequests.value.delete(commentId)
+                scaffoldingLocks.value.delete(commentId)
+                
+                socket.emit('scaffolding-lock-released', {
+                    room: roomId,
+                    userId: socket.id,
+                    commentId: commentId
+                })
+                
+            } catch (error) {
+                console.error('❌ Error requesting scaffolding:', error)
+                
+                // Release the lock on error
+                activeScaffoldingRequests.value.delete(commentId)
+                scaffoldingLocks.value.delete(commentId)
+                
+                socket.emit('scaffolding-lock-released', {
+                    room: roomId,
+                    userId: socket.id,
+                    commentId: commentId
+                })
+            }
+        }
+        
+        const showScaffoldingSuggestion = (scaffoldingResult, lineNumber) => {
+            // Auto-insert scaffolding code directly below the comment
+            if (view.value && scaffoldingResult.scaffoldingCode) {
+                const editor = view.value
+                const doc = editor.state.doc
+                const commentLine = doc.line(lineNumber + 1) // 1-indexed
+                
+                // Insert scaffolding code after the comment line (not replacing it)
+                const insertPosition = commentLine.to
+                
+                const transaction = editor.state.update({
+                    changes: {
+                        from: insertPosition,
+                        to: insertPosition,
+                        insert: '\n' + scaffoldingResult.scaffoldingCode
+                    }
+                })
+                
+                editor.dispatch(transaction)
+                
+                // Show simple notification
+                scaffoldingNotificationText.value = `Added scaffolding: ${scaffoldingResult.originalComment}`
+                showScaffoldingNotification.value = true
+                
+                // Auto-hide notification after 3 seconds
+                setTimeout(() => {
+                    showScaffoldingNotification.value = false
+                }, 3000)
+                
+                // Send notification to chat
+                addChatMessage({
+                    id: 'scaffolding_applied_' + Date.now(),
+                    content: `🏗️ Applied scaffolding for: "${scaffoldingResult.originalComment}"`,
+                    username: 'Scaffolding Assistant',
+                    userId: 'scaffolding_system',
+                    timestamp: new Date().toISOString(),
+                    room: roomId,
+                    isAutoGenerated: true,
+                    isSystemMessage: true,
+                    scaffoldingData: {
+                        originalComment: scaffoldingResult.originalComment,
+                        language: scaffoldingResult.language
+                    }
+                })
+                
+                console.log('✅ Auto-inserted scaffolding below comment')
+            }
+        }
+        
+        // Watch for code changes to detect scaffolding triggers
+        watch(() => code.value, (newValue, oldValue) => {
+            if (newValue !== oldValue && !isLocalUpdate.value && !isReadOnly.value) {
+                // Clean up processed comments that no longer exist in the code
+                const currentLines = newValue.split('\n')
+                const cleanedProcessedComments = new Set()
+                
+                processedComments.value.forEach(commentId => {
+                    const [lineNum, content] = commentId.split(':')
+                    const currentLineContent = currentLines[parseInt(lineNum)]?.trim()
+                    
+                    // Keep the comment in processed list only if it still exists and matches
+                    if (currentLineContent && commentId.includes(currentLineContent)) {
+                        cleanedProcessedComments.add(commentId)
+                    }
+                })
+                
+                processedComments.value = cleanedProcessedComments
+                
+                // Debounce to avoid too many triggers
+                setTimeout(() => {
+                    detectScaffoldingTrigger(newValue, oldValue || '')
+                }, 100)
+            }
+        })
+        
+        // ========================
+        // END SCAFFOLDING FUNCTIONALITY
+        // ========================
+        
         return {
             code,
             output,
@@ -1146,9 +1473,12 @@ export default defineComponent({
             onApplyFix,
             onExplainIssue,
             onCodeAnalysisDismissed,
+            // Scaffolding notification
+            showScaffoldingNotification,
+            scaffoldingNotificationText,
             // Chat handling
             handleCodeRunnerChatMessage,
-            pairChat
+            pairChat,
         }
     }
 })
@@ -1444,5 +1774,47 @@ input:checked + .slider:before {
     .code-editor {
         height: 500px;
     }
+}
+
+/* Small Scaffolding Notification */
+.scaffolding-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    max-width: 300px;
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.notification-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification-icon {
+    font-size: 16px;
+}
+
+.notification-text {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
 }
 </style>
