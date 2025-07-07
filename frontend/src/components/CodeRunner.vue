@@ -26,6 +26,7 @@
         <div class="terminal-title">
           <span class="terminal-icon">🖥️</span>
           Output
+          <span v-if="isRemoteExecution" class="remote-indicator">📡 Remote</span>
         </div>
         <div class="terminal-controls">
           <button @click="clearOutput" class="clear-btn" title="Clear output">
@@ -85,6 +86,18 @@
         </div>
       </div>
     </div>
+
+    <!-- Remote Execution Notification -->
+    <div v-if="showRemoteExecution && remoteExecution" class="remote-execution-notification">
+      <div class="remote-notification-content">
+        <span class="remote-icon">📡</span>
+        <span class="remote-message">
+          User {{ remoteExecution.userId }} executed {{ remoteExecution.language }} code
+        </span>
+        <span class="remote-time">{{ remoteExecution.timestamp }}</span>
+        <button @click="dismissRemoteExecution" class="remote-close">×</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -125,7 +138,10 @@ export default {
       showOutput: false,
       lastExecutionTime: null,
       executionInfo: '',
-      aiAnalysis: null  // NEW: Store AI analysis for execution panel
+      aiAnalysis: null,  // Store AI analysis for execution panel
+      remoteExecution: null, // Track remote execution results
+      showRemoteExecution: false,
+      isRemoteExecution: false // Flag to indicate if current output is from remote execution
     }
   },
 
@@ -156,6 +172,12 @@ export default {
             console.log('📊 Received AI analysis:', data.analysis);
           }
         });
+
+        // Listen for remote code execution results
+        this.socket.on('code_execution_result', (data) => {
+          console.log('📡 CodeRunner: Received remote execution:', data);
+          this.handleRemoteExecution(data);
+        });
       }
     },
 
@@ -178,6 +200,45 @@ export default {
       }
     },
 
+    handleRemoteExecution(data) {
+      console.log('📱 Handling remote execution in CodeRunner:', data);
+      
+      // Show the remote execution results in the main output panel
+      this.output = data.result.output || '';
+      this.error = data.result.error || '';
+      this.executionInfo = `Executed by User ${data.user_id.slice(-4)} at ${new Date(data.timestamp * 1000).toLocaleTimeString()}`;
+      this.lastExecutionTime = data.result.executionTime || null;
+      this.showOutput = true;
+      this.isRemoteExecution = true; // Mark as remote execution
+      
+      // Store remote execution data for notification only
+      this.remoteExecution = {
+        userId: data.user_id.slice(-4),
+        timestamp: new Date(data.timestamp * 1000).toLocaleTimeString(),
+        language: data.language
+      };
+
+      // Show brief notification that someone executed code
+      this.showRemoteExecution = true;
+      
+      // Auto-hide notification after 5 seconds (shorter since main results are in output panel)
+      setTimeout(() => {
+        this.showRemoteExecution = false;
+      }, 5000);
+
+      // Scroll to bottom of output to show new results
+      this.$nextTick(() => {
+        if (this.$refs.terminalOutput) {
+          this.$refs.terminalOutput.scrollTop = this.$refs.terminalOutput.scrollHeight;
+        }
+      });
+    },
+
+    dismissRemoteExecution() {
+      this.showRemoteExecution = false;
+      this.remoteExecution = null;
+    },
+
     async runCode() {
       if (!this.code.trim()) {
         this.error = 'No code to execute';
@@ -191,6 +252,7 @@ export default {
       this.executionInfo = '';
       this.showOutput = true;
       this.aiAnalysis = null;  // Clear previous AI analysis
+      this.isRemoteExecution = false; // Mark as local execution
       
       const startTime = Date.now();
       
@@ -256,6 +318,7 @@ export default {
       this.error = '';
       this.executionInfo = '';
       this.lastExecutionTime = null;
+      this.isRemoteExecution = false; // Reset remote execution flag
     },
     
     toggleTerminal() {
@@ -362,6 +425,15 @@ export default {
   gap: 8px;
   font-weight: 500;
   color: #495057;
+}
+
+.remote-indicator {
+  font-size: 12px;
+  background: #e3f2fd;
+  color: #1565c0;
+  padding: 2px 6px;
+  border-radius: 12px;
+  border: 1px solid #2196f3;
 }
 
 .terminal-icon {
@@ -564,5 +636,72 @@ export default {
 
 .terminal-output::-webkit-scrollbar-thumb:hover {
   background: #adb5bd;
+}
+
+/* Remote Execution Notification Styles */
+.remote-execution-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #e3f2fd;
+  border: 1px solid #2196f3;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+  z-index: 1050;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.remote-notification-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #1565c0;
+}
+
+.remote-icon {
+  font-size: 16px;
+}
+
+.remote-message {
+  font-weight: 500;
+}
+
+.remote-time {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-left: auto;
+}
+
+.remote-close {
+  background: none;
+  border: none;
+  color: #1565c0;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  margin-left: 8px;
+}
+
+.remote-close:hover {
+  background: rgba(33, 150, 243, 0.1);
 }
 </style>
