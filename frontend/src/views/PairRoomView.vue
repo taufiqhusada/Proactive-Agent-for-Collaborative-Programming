@@ -51,6 +51,8 @@
                     :language="selectedLanguage"
                     :room-id="roomId"
                     :socket="socket"
+                    :current-user-id="currentUserId"
+                    @chat-message="handleCodeRunnerChatMessage"
                 />
             </div>
 
@@ -58,6 +60,7 @@
             <div class="right-panel">
                 <AIAgentStatus />
                 <PairChat 
+                    ref="pairChat"
                     :socket="socket" 
                     :room-id="roomId" 
                     :current-user-id="currentUserId"
@@ -1057,6 +1060,17 @@ export default defineComponent({
         // Make test function available globally for debugging
         window.testCodeAnalysis = testCodeAnalysis
         
+        // Handle chat message from CodeRunner
+        const handleCodeRunnerChatMessage = (message) => {
+            // Forward the message to PairChat component
+            if (pairChat.value) {
+                pairChat.value.addMessage(message);
+            }
+        }
+        
+        // Create ref for PairChat component
+        const pairChat = ref(null)
+        
         return {
             code,
             output,
@@ -1080,7 +1094,10 @@ export default defineComponent({
             onHighlightLine,
             onApplyFix,
             onExplainIssue,
-            onCodeAnalysisDismissed
+            onCodeAnalysisDismissed,
+            // Chat handling
+            handleCodeRunnerChatMessage,
+            pairChat
         }
     }
 })

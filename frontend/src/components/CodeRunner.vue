@@ -64,6 +64,25 @@
           <span class="info-icon">ℹ️</span>
           {{ executionInfo }}
         </div>
+
+        <!-- NEW: AI Analysis Section -->
+        <div v-if="aiAnalysis" class="ai-analysis-section">
+          <div class="analysis-header">
+            <div class="analysis-title-group">
+              <span class="analysis-icon">🔍</span>
+              <span class="analysis-title">AI Analysis</span>
+            </div>
+            <button 
+              @click="requestDetailedHelp" 
+              class="more-help-btn"
+            >
+              Get Detailed Help
+            </button>
+          </div>
+          <div :class="['analysis-content', aiAnalysis.type]">
+            {{ aiAnalysis.message }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -72,6 +91,8 @@
 <script>
 export default {
   name: 'CodeRunner',
+  
+  emits: ['chat-message'],
   
   props: {
     code: {
@@ -89,6 +110,10 @@ export default {
     socket: {
       type: Object,
       default: null
+    },
+    currentUserId: {
+      type: String,
+      default: null
     }
   },
   
@@ -99,8 +124,13 @@ export default {
       error: '',
       showOutput: false,
       lastExecutionTime: null,
-      executionInfo: ''
+      executionInfo: '',
+      aiAnalysis: null  // NEW: Store AI analysis for execution panel
     }
+  },
+
+  mounted() {
+    this.setupSocketListeners();
   },
   
   computed: {
@@ -117,6 +147,37 @@ export default {
   },
   
   methods: {
+    setupSocketListeners() {
+      if (this.socket) {
+        // Listen for AI analysis results
+        this.socket.on('execution_analysis', (data) => {
+          if (data.analysis) {
+            this.aiAnalysis = data.analysis;
+            console.log('📊 Received AI analysis:', data.analysis);
+          }
+        });
+      }
+    },
+
+    requestDetailedHelp() {
+      // Send a message to chat requesting detailed help
+      if (this.socket && this.roomId && this.aiAnalysis) {
+        const message = {
+          room: this.roomId,
+          content: '@ai Can you provide help with my code execution issue?',
+          username: 'User',
+          userId: this.currentUserId || 'user_' + Date.now(),
+          timestamp: new Date().toISOString()
+        };
+
+        // Emit to parent component to add to local chat
+        this.$emit('chat-message', message);
+        
+        // Send to socket for other users
+        this.socket.emit('chat_message', message);
+      }
+    },
+
     async runCode() {
       if (!this.code.trim()) {
         this.error = 'No code to execute';
@@ -129,6 +190,7 @@ export default {
       this.error = '';
       this.executionInfo = '';
       this.showOutput = true;
+      this.aiAnalysis = null;  // Clear previous AI analysis
       
       const startTime = Date.now();
       
@@ -401,6 +463,79 @@ export default {
 
 .info-icon {
   font-size: 12px;
+}
+
+/* AI Analysis Section */
+.ai-analysis-section {
+  margin-top: 12px;
+  border: 1px solid #e3f2fd;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f0f9ff, #e3f2fd);
+  overflow: hidden;
+}
+
+.analysis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  border-bottom: 1px solid #e3f2fd;
+}
+
+.analysis-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: #1565c0;
+}
+
+.analysis-icon {
+  font-size: 14px;
+}
+
+.analysis-title {
+  font-size: 13px;
+}
+
+.analysis-content {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #424242;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.analysis-content.error {
+  color: #d32f2f;
+  background: linear-gradient(135deg, #fff5f5, #ffebee);
+}
+
+.analysis-content.warning {
+  color: #ef6c00;
+  background: linear-gradient(135deg, #fffaf0, #fff8e1);
+}
+
+.more-help-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1565c0;
+  background: white;
+  border: 1px solid #1565c0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.more-help-btn:hover {
+  background: #1565c0;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(21, 101, 192, 0.2);
 }
 
 /* Scrollbar styling for terminal */

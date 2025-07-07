@@ -37,6 +37,13 @@ class ConversationContext:
     problem_description: str = ""
     problem_title: str = ""
     
+    # Execution results tracking
+    last_execution_code: str = ""
+    last_execution_output: str = ""
+    last_execution_error: str = ""
+    last_execution_success: bool = True
+    last_execution_time: Optional[datetime] = None
+    
     # Simple timestamp tracking
     last_message_time: Optional[datetime] = None  # When the last message was received
 
@@ -585,6 +592,17 @@ class AIAgent:
         last_message = context.messages[-1] if context.messages else None
         is_direct_mention = last_message and self._is_direct_ai_mention(last_message.content)
         
+        # Build execution context if available
+        execution_context = ""
+        if context.last_execution_time and context.last_execution_time > datetime.now() - timedelta(seconds=30):
+            execution_context = f"""
+                Recent Code Execution ({context.last_execution_time.strftime('%H:%M:%S')}):
+                Code: {context.last_execution_code[:200]}...
+                Output: {context.last_execution_output[:100] if context.last_execution_output else 'No output'}
+                Error: {context.last_execution_error[:100] if context.last_execution_error else 'No error'}
+                Success: {context.last_execution_success}
+                """
+        
         # Adjust prompt based on whether this is a direct mention
         if is_direct_mention:
             prompt = f"""You are CodeBot, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
@@ -598,12 +616,15 @@ class AIAgent:
 
                             Code Context:
                             {context.code_context[:300] if context.code_context else "No code visible"}
+                            
+                            {execution_context}
 
                             NATURAL TEACHING APPROACH - Be helpful while encouraging learning:
                             - Mix different response types: hints, encouragement, specific guidance, questions
                             - Be conversational and supportive, not just question-asking
                             - Adapt to their level: sometimes give direct help when appropriate
                             - Balance learning with actually being helpful
+                            - If they have execution results, focus on those specific issues
 
                             Response variety examples:
                             - Direct help: "Try using array.map() instead of a for loop here"
@@ -631,12 +652,15 @@ class AIAgent:
 
                         Code Context:
                         {context.code_context[:300] if context.code_context else "No code visible"}
+                        
+                        {execution_context}
 
                         NATURAL INTERVENTION - Help appropriately without being pushy:
                         - If they're stuck or confused: Offer helpful hints or specific tips
                         - If they're discussing actively: Let them work it out
                         - If they need encouragement: Give positive reinforcement
                         - If there's a clear issue: Point it out gently
+                        - If they have execution results, focus on those specific issues
 
                         VARIED RESPONSE TYPES:
                         - Helpful tips: "Try adding console.log to see what's happening"
@@ -1336,6 +1360,124 @@ class AIAgent:
         
         # Start audio streaming in a separate thread
         threading.Thread(target=generate_and_stream_audio, daemon=True).start()
+
+    async def analyze_execution_for_panel(self, code: str, result: dict, problem_context: str = None) -> dict:
+        """Generate concise help for execution panel display"""
+        
+        if not self.async_client:
+            return None
+        
+        try:
+            # Only analyze if there's an issue or potential improvement
+            has_error = not result.get('success', True)
+            output = result.get('output', '')
+            error = result.get('error', '')
+            
+            if not has_error and not problem_context:
+                return None  # No analysis needed for successful runs without context
+            
+            prompt = f"""Analyze code execution briefly:
+
+                        Code: {code[:300]}
+                        Problem: {problem_context or 'General task'}
+                        Success: {result.get('success', False)}
+                        Output: {output[:200]}
+                        Error: {error[:200]}
+
+                        Provide brief analysis (max 25 characters):
+                        - If syntax/runtime error: "Fix: [specific issue]"
+                        - If wrong output: "Output issue: [brief hint]" 
+                        - If correct: return "correct"
+
+                        Examples: "Fix: Missing closing parenthesis", "Output issue: Should return sum not array", "Fix: Undefined variable x"
+                        """
+
+            response = await self.async_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=25,
+                temperature=0.1
+            )
+            
+            analysis = response.choices[0].message.content.strip()
+            
+            if analysis.lower() == "correct":
+                return None
+            
+            return {
+                "message": analysis[:80],  # Enforce character limit
+                "type": "error" if has_error else "warning",
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in panel analysis: {e}")
+            return None
+
+    def start_panel_analysis(self, room_id: str, code: str, result: dict):
+        """Start non-blocking AI analysis for execution panel"""
+        try:
+            # Store execution results in conversation context for later reference
+            if room_id not in self.conversation_history:
+                self.conversation_history[room_id] = ConversationContext(
+                    messages=[],
+                    room_id=room_id
+                )
+            
+            context = self.conversation_history[room_id]
+            context.last_execution_code = code
+            context.last_execution_output = result.get('output', '')
+            context.last_execution_error = result.get('error', '')
+            context.last_execution_success = result.get('success', True)
+            context.last_execution_time = datetime.now()
+            
+            # Get problem context from conversation history
+            problem_context = ""
+            if context.problem_description or context.problem_title:
+                problem_context = context.problem_description or context.problem_title
+            else:
+                # If no explicit problem, look for recent problem-related messages
+                recent_messages = context.messages[-10:] if context.messages else []
+                for msg in reversed(recent_messages):
+                    content = msg.content.lower()
+                    if any(word in content for word in ['problem', 'task', 'write', 'function', 'create']):
+                        problem_context = msg.content[:200]
+                        break
+            
+            # Use socketio background task for non-blocking execution
+            if self.socketio:
+                self.socketio.start_background_task(
+                    self._run_panel_analysis, room_id, code, result, problem_context
+                )
+                print(f"🔍 Started panel analysis for room {room_id}")
+                
+        except Exception as e:
+            logging.error(f"Error starting panel analysis: {e}")
+
+    def _run_panel_analysis(self, room_id: str, code: str, result: dict, problem_context: str):
+        """Background task for panel analysis"""
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            analysis = loop.run_until_complete(
+                self.analyze_execution_for_panel(code, result, problem_context)
+            )
+            
+            if analysis:
+                print(f"📊 Panel analysis: {analysis['message']}")
+                self.socketio.emit('execution_analysis', {
+                    'analysis': analysis,
+                    'room_id': room_id
+                }, room=room_id, namespace='/ws')
+                
+        except Exception as e:
+            logging.error(f"Error in panel analysis background task: {e}")
+        finally:
+            try:
+                loop.close()
+            except:
+                pass
 
 # Global AI agent instance
 ai_agent = None

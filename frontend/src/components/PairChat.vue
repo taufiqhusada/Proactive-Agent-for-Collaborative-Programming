@@ -1496,6 +1496,12 @@ export default defineComponent({
             }
         })
 
+        // Add a function to manually add messages (for CodeRunner integration)
+        const addMessage = (message) => {
+            messages.value.push(message)
+            scrollToBottom()
+        }
+
         return {
             messages,
             newMessage,
@@ -1515,6 +1521,7 @@ export default defineComponent({
             isTyping,
             formatTime,
             sendMessage,
+            addMessage,
             toggleAutoRecording,
             toggleAIVoice,
             dismissTooltip,

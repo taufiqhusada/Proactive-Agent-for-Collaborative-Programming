@@ -348,13 +348,13 @@ def execute_code_endpoint():
         # Execute code based on language
         result = execute_code(code, language)
         
-        # Trigger async AI validation if room_id provided (non-blocking)
-        if room_id and ai_agent:
+        # Trigger panel analysis for execution feedback (non-blocking)
+        if room_id and ai_agent and code.strip():
             try:
-                ai_agent.start_execution_validation_optimized(room_id, code, result)
-                print(f"🤖 Started async AI validation for room {room_id}")
-            except Exception as validation_error:
-                print(f"⚠️  AI validation error (non-blocking): {validation_error}")
+                ai_agent.start_panel_analysis(room_id, code, result)
+                print(f"🔍 Started panel analysis for room {room_id}")
+            except Exception as analysis_error:
+                print(f"⚠️  Panel analysis error (non-blocking): {analysis_error}")
         
         print(f"✅ Execution Result: {result}")
         return jsonify(result)
