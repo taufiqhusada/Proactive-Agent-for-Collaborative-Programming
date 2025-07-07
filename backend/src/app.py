@@ -5,6 +5,8 @@ app.py - Backend for remote pair programming
 import os
 import subprocess
 import threading
+import time
+import asyncio
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -198,6 +200,29 @@ def ws_ai_audio_playback_complete(data):
     # Release AI generation lock now that audio is actually finished
     ai_agent.release_generation_lock(room, message_id)
 
+@socketio.on("code_execution", namespace="/ws")
+def ws_code_execution(data):
+    """
+    Handle code execution events for real-time collaboration and AI analysis.
+    """
+    print(f"Code execution event from {request.sid} in room {data['room']}")
+    room = data["room"]
+    code = data.get("code", "")
+    language = data.get("language", "python")
+    result = data.get("result", {})
+    
+    # Broadcast execution result to other clients in the room
+    emit("code_execution_result", {
+        "code": code,
+        "language": language,
+        "result": result,
+        "timestamp": time.time(),
+        "user_id": request.sid
+    }, room=room, include_self=False)
+    
+    # Trigger AI validation in background (already handled by API endpoint)
+    print(f"🤖 Code execution broadcasted to room {room}")
+
 @socketio.on("voice_activity_detected", namespace="/ws")
 def ws_voice_activity_detected(data):
     """
@@ -310,9 +335,11 @@ def execute_code_endpoint():
         data = request.json
         code = data.get('code', '')
         language = data.get('language', 'python')
+        room_id = data.get('room_id')  # Get room_id for AI validation
         
         print(f"🚀 Code Execution Request:")
         print(f"  Language: {language}")
+        print(f"  Room ID: {room_id}")
         print(f"  Code: {code[:100]}...")
         
         if not code.strip():
@@ -320,6 +347,14 @@ def execute_code_endpoint():
         
         # Execute code based on language
         result = execute_code(code, language)
+        
+        # Trigger async AI validation if room_id provided (non-blocking)
+        if room_id and ai_agent:
+            try:
+                ai_agent.start_execution_validation_optimized(room_id, code, result)
+                print(f"🤖 Started async AI validation for room {room_id}")
+            except Exception as validation_error:
+                print(f"⚠️  AI validation error (non-blocking): {validation_error}")
         
         print(f"✅ Execution Result: {result}")
         return jsonify(result)

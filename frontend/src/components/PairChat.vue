@@ -17,14 +17,16 @@
                         'message', 
                         { 
                             'own-message': message.userId === currentUserId,
-                            'ai-message': message.isAI,
+                            'ai-message': message.isAI && !message.isExecutionHelp,
+                            'ai-execution-help': message.isAI && message.isExecutionHelp,
                             'system-message': message.isSystem
                         }
                     ]"
                 >
                     <div class="message-header">
                         <span class="username">
-                            <span v-if="message.isAI" class="ai-badge">🤖</span>
+                            <span v-if="message.isAI && message.isExecutionHelp" class="ai-badge">🔍</span>
+                            <span v-else-if="message.isAI" class="ai-badge">🤖</span>
                             {{ message.username }}
                         </span>
                         <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
@@ -1602,6 +1604,15 @@ export default defineComponent({
     align-self: flex-start;
     border-left: 4px solid #065f46;
     box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+}
+
+.message.ai-execution-help {
+    background: linear-gradient(135deg, #dbeafe, #bae6fd);
+    color: #1e40af;
+    align-self: flex-start;
+    border-left: 4px solid #0ea5e9;
+    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);
+    border-radius: 12px;
 }
 
 .message.system-message {

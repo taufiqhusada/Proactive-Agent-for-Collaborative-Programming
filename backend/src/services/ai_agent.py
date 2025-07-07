@@ -15,6 +15,7 @@ import time
 import base64
 import random
 import concurrent.futures
+import logging
 
 @dataclass
 class Message:
@@ -77,6 +78,10 @@ class AIAgent:
         
         # Simple timer tracking (much more efficient)
         self.pending_timers = {}  # room_id -> threading.Timer
+
+        # Add execution validation tracking
+        self.execution_attempts = {}  # Track attempts per room for graduated help
+        self.validation_tasks = {}    # Track running validation tasks
 
     def _cancel_pending_intervention(self, room_id: str, reason: str):
         """Cancel any pending timer for a room"""
@@ -1055,6 +1060,283 @@ class AIAgent:
             print(f"❌ Unexpected error: {e}")
             return {'issues': []}
     
+    async def analyze_code_execution_async(self, code: str, execution_result: Dict[str, Any], 
+                                         problem_context: Optional[str] = None, 
+                                         room_id: Optional[str] = None) -> Dict[str, Any]:
+        """Asynchronously analyze code execution results against problem requirements"""
+        if not self.async_client:
+            return {"needs_help": False, "message": "AI analysis unavailable"}
+            
+        try:
+            # Build analysis prompt
+            analysis_prompt = f"""You are an AI programming tutor analyzing student code execution.
+
+                                    Code executed:
+                                    ```
+                                    {code}
+                                    ```
+
+                                    Execution Result:
+                                    - Success: {execution_result.get('success', False)}
+                                    - Output: {execution_result.get('output', '')}
+                                    - Error: {execution_result.get('error', '')}
+
+                                    Problem Context: {problem_context or 'No specific problem provided'}
+
+                                    Analyze if this code correctly solves the problem. Respond with JSON only:
+                                    {{
+                                        "is_correct": boolean,
+                                        "needs_help": boolean,
+                                        "confidence": number (0-100),
+                                        "issues": ["specific issues if any"],
+                                        "help_type": "hint|debug|guidance|encouragement",
+                                        "message": "encouraging message or offer to help (max 100 chars)"
+                                    }}
+
+                                    Be encouraging. Only offer help if there are clear issues or incorrect results."""
+
+            response = await self.async_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": analysis_prompt}],
+                max_tokens=300,
+                temperature=0.3
+            )
+
+            print(response)
+            
+            analysis_text = response.choices[0].message.content.strip()
+            return self._parse_execution_analysis(analysis_text)
+            
+        except Exception as e:
+            logging.error(f"Error in async code execution analysis: {e}")
+            return {
+                "is_correct": False,
+                "needs_help": True,
+                "confidence": 0,
+                "issues": ["Analysis failed"],
+                "help_type": "debug",
+                "message": "Need help with your code? 🤖"
+            }
+
+    def _parse_execution_analysis(self, analysis_text: str) -> Dict[str, Any]:
+        """Parse the execution analysis response"""
+        try:
+            # Try to extract JSON from the response
+            json_start = analysis_text.find('{')
+            json_end = analysis_text.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_str = analysis_text[json_start:json_end]
+                return json.loads(json_str)
+            else:
+                # Fallback response
+                return {
+                    "is_correct": False,
+                    "needs_help": True,
+                    "confidence": 50,
+                    "issues": ["Parse failed"],
+                    "help_type": "guidance",
+                    "message": "Want help with your code? 🔍"
+                }
+                
+        except Exception as e:
+            logging.error(f"Error parsing execution analysis: {e}")
+            return {
+                "is_correct": False,
+                "needs_help": True,
+                "confidence": 0,
+                "issues": ["Parse error"],
+                "help_type": "debug",
+                "message": "Code issue? Let me help! 🛠️"
+            }
+
+    def _parse_execution_analysis_fast(self, analysis_text: str) -> Dict[str, Any]:
+        """Fast parser for optimized execution analysis"""
+        try:
+            # Try to extract JSON
+            json_start = analysis_text.find('{')
+            json_end = analysis_text.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_str = analysis_text[json_start:json_end]
+                return json.loads(json_str)
+            else:
+                # Quick fallback
+                return {
+                    "needs_help": True,
+                    "is_correct": False,
+                    "help_message": "Need help? 🤖"
+                }
+                
+        except Exception:
+            return {
+                "needs_help": True,
+                "is_correct": False,
+                "help_message": "Having trouble? 🐛"
+            }
+
+    async def handle_code_execution_validation_optimized(self, room_id: str, code: str, 
+                                                        execution_result: Dict[str, Any]) -> None:
+        """OPTIMIZED: Single AI call, faster message delivery"""
+        try:
+            # Get current problem context
+            context = self.conversation_history.get(room_id, ConversationContext([], room_id))
+            problem_context = context.problem_description or context.problem_title
+            
+            # OPTIMIZATION: Single AI call that analyzes AND generates help message
+            analysis = await self.analyze_code_execution_async_optimized(
+                code, execution_result, problem_context, room_id
+            )
+            
+            print(f"🔍 Optimized analysis result: {analysis}")
+
+            # Track attempts for graduated help
+            if room_id not in self.execution_attempts:
+                self.execution_attempts[room_id] = 0
+                
+            # Only offer help if needed and not correct
+            if analysis.get('needs_help', False) and not analysis.get('is_correct', True):
+                self.execution_attempts[room_id] += 1
+                
+                # OPTIMIZATION: Skip the wait and activity check for faster response
+                help_message = analysis.get('help_message', '')
+                if help_message.strip():
+                    # OPTIMIZATION: Direct socket emit instead of multiple thread/loop creation
+                    await self._send_help_message_direct(room_id, help_message)
+            else:
+                # Reset attempts if code is correct
+                self.execution_attempts[room_id] = 0
+                
+        except Exception as e:
+            logging.error(f"Error in optimized code execution validation: {e}")
+
+    async def analyze_code_execution_async_optimized(self, code: str, execution_result: Dict[str, Any], 
+                                                   problem_context: Optional[str] = None, 
+                                                   room_id: Optional[str] = None) -> Dict[str, Any]:
+        """OPTIMIZED: Single AI call for analysis + help message generation"""
+        if not self.async_client:
+            return {"needs_help": False, "help_message": ""}
+            
+        try:
+            # Get attempt count for context
+            attempts = self.execution_attempts.get(room_id, 1) if room_id else 1
+            
+            # OPTIMIZATION: Include problem context but keep prompt concise
+            prompt = f"""Analyze code execution for correctness:
+
+                        Code: {code}
+                        Problem: {problem_context or 'General coding task'}
+                        Success: {execution_result.get('success', False)}
+                        Output: {execution_result.get('output', '')}
+                        Error: {execution_result.get('error', '')}
+                        Attempt: {attempts}
+
+                        Check: Does code solve the problem correctly? Any errors?
+
+                        JSON response:
+                        {{"needs_help": boolean, "is_correct": boolean, "help_message": "brief help (max 25 words) or empty if correct"}}"""
+
+            response = await self.async_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=50,  # Slightly higher for problem-aware analysis
+                temperature=0.3  # Very low for consistency
+            )
+            
+            return self._parse_execution_analysis_fast(response.choices[0].message.content.strip())
+            
+        except Exception as e:
+            logging.error(f"Error in optimized analysis: {e}")
+            return {"needs_help": True, "is_correct": False, "help_message": "Need help? 🐛"}
+
+    async def _send_help_message_direct(self, room_id: str, message: str) -> None:
+        """OPTIMIZED: Direct message sending for execution help with special styling"""
+        try:
+            # Use the execution help message method for different styling
+            await self.send_ai_execution_help_message(room_id, message)
+        except Exception as e:
+            logging.error(f"Error in direct help send: {e}")
+
+    def start_execution_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any]) -> None:
+        """OPTIMIZED: Start validation with minimal overhead"""
+        try:
+            if self.socketio:
+                # Use the optimized validation method
+                self.socketio.start_background_task(
+                    self._run_async_validation_optimized, room_id, code, execution_result
+                )
+                print(f"🚀 Started optimized AI validation for room {room_id}")
+        except Exception as e:
+            logging.error(f"Error starting optimized validation: {e}")
+
+    def _run_async_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any]) -> None:
+        """OPTIMIZED: Single event loop creation"""
+        try:
+            # Create new event loop for this thread (only once)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Run the optimized validation
+            loop.run_until_complete(
+                self.handle_code_execution_validation_optimized(room_id, code, execution_result)
+            )
+            
+        except Exception as e:
+            logging.error(f"Error in optimized validation thread: {e}")
+        finally:
+            try:
+                loop.close()
+            except:
+                pass
+
+    async def send_ai_execution_help_message(self, room_id: str, content: str):
+        """Send an AI execution help message with different styling"""
+        message = {
+            'id': f"ai_exec_{int(time.time() * 1000)}",
+            'content': content,
+            'username': self.agent_name,
+            'userId': self.agent_id,
+            'timestamp': datetime.now().isoformat(),
+            'room': room_id,
+            'isAI': True,
+            'isExecutionHelp': True,  # New field to identify execution help messages
+            'hasAudio': True,  # Will have streaming audio
+            'isStreaming': True  # Indicate this is a streaming response
+        }
+        
+        # Update last response time for cooldown tracking
+        if room_id in self.conversation_history:
+            context = self.conversation_history[room_id]
+            context.last_ai_response = datetime.now()
+            print(f"🔒 AI EXECUTION HELP: Tracking response time for cooldown in room {room_id}")
+        
+        # Send message immediately (don't wait for audio)
+        self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
+        
+        # Generate streaming audio in parallel (non-blocking)
+        def generate_and_stream_audio():
+            try:
+                # Run the async audio streaming in a new event loop
+                async def audio_task():
+                    await self.generate_streaming_speech(content, room_id, message['id'])
+                
+                # Create and run new event loop for audio generation
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(audio_task())
+                loop.close()
+            except Exception as e:
+                print(f"Error in streaming audio: {e}")
+                # Fallback to simple notification that audio failed
+                self.socketio.emit('ai_audio_error', {
+                    'messageId': message['id'],
+                    'room': room_id,
+                    'error': 'Audio generation failed'
+                }, room=room_id, namespace='/ws')
+        
+        # Start audio streaming in a separate thread
+        threading.Thread(target=generate_and_stream_audio, daemon=True).start()
+
 # Global AI agent instance
 ai_agent = None
 

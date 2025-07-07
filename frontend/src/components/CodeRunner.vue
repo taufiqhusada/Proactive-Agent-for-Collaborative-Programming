@@ -81,6 +81,14 @@ export default {
     language: {
       type: String,
       required: true
+    },
+    roomId: {
+      type: String,
+      default: null
+    },
+    socket: {
+      type: Object,
+      default: null
     }
   },
   
@@ -134,7 +142,8 @@ export default {
           },
           body: JSON.stringify({
             code: this.code,
-            language: this.language
+            language: this.language,
+            room_id: this.roomId  // Include room_id for AI validation
           })
         });
         
@@ -149,6 +158,16 @@ export default {
           
           if (result.exitCode !== 0) {
             this.executionInfo += ` (Exit code: ${result.exitCode})`;
+          }
+          
+          // Emit code execution event to room (for real-time collaboration)
+          if (this.roomId && this.socket) {
+            this.socket.emit('code_execution', {
+              room: this.roomId,
+              code: this.code,
+              language: this.language,
+              result: result
+            });
           }
         } else {
           this.error = result.error || 'Execution failed';

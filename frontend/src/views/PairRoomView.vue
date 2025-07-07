@@ -49,6 +49,8 @@
                 <CodeRunner 
                     :code="code"
                     :language="selectedLanguage"
+                    :room-id="roomId"
+                    :socket="socket"
                 />
             </div>
 
