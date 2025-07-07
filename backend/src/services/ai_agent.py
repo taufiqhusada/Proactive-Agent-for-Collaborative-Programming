@@ -1373,40 +1373,66 @@ class AIAgent:
             output = result.get('output', '')
             error = result.get('error', '')
             
+            # Only analyze if there's an error OR we have problem context to validate against
             if not has_error and not problem_context:
-                return None  # No analysis needed for successful runs without context
+                return None  # Don't analyze successful code without knowing what it should do
             
-            prompt = f"""Analyze code execution briefly:
+            prompt = f"""Analyze this code execution:
 
-                        Code: {code[:300]}
-                        Problem: {problem_context or 'General task'}
-                        Success: {result.get('success', False)}
-                        Output: {output[:200]}
-                        Error: {error[:200]}
+                    Code: {code[:500]}
+                    Problem Context: {problem_context or 'General coding task'}
+                    Execution Success: {result.get('success', True)}
+                    Output: {output[:300] if output else 'No output'}
+                    Error: {error[:300] if error else 'No error'}
 
-                        Provide brief analysis (max 25 characters):
-                        - If syntax/runtime error: "Fix: [specific issue]"
-                        - If wrong output: "Output issue: [brief hint]" 
-                        - If correct: return "correct"
+                    Instructions:
+                    - If syntax/runtime errors: suggest the fix
+                    - If wrong output: flag it
+                    - If code works but has these patterns, suggest optimization:
+                    * Nested loops for searching/finding pairs → "Optimize: Use hash map"
+                    * Linear search in loops → "Optimize: Use hash map/set"
+                    * O(n²) when O(n) possible → "Optimize: Better algorithm"
+                    - Only return "correct" if code is both working AND reasonably efficient
 
-                        Examples: "Fix: Missing closing parenthesis", "Output issue: Should return sum not array", "Fix: Undefined variable x"
-                        """
+                    Provide analysis (max 45 characters):
+                    - Error: "Fix: [issue]"
+                    - Wrong output: "Output: [issue]" 
+                    - Inefficient: "Optimize: [suggestion]"
+                    - Good code: "correct"
+
+                    Examples: "Fix: Missing )", "Optimize: Use hash map", "correct"
+                    """
 
             response = await self.async_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=25,
+                max_tokens=15,
                 temperature=0.1
             )
             
             analysis = response.choices[0].message.content.strip()
+
+            print(f"🔍 Panel analysis response: {analysis}")
             
             if analysis.lower() == "correct":
-                return None
+                return {
+                    "message": "✅ Code works correctly",
+                    "type": "success",
+                }
+            
+            # Determine type based on content
+            if analysis.lower().startswith("fix:"):
+                analysis_type = "error"
+            elif analysis.lower().startswith("optimize:"):
+                analysis_type = "optimization" 
+            elif analysis.lower().startswith("output:"):
+                analysis_type = "warning"
+            else:
+                analysis_type = "error" if has_error else "warning"
             
             return {
-                "message": analysis[:80],  # Enforce character limit
-                "type": "error" if has_error else "warning",
+                "message": analysis[:50],  # Match the prompt limit
+                "type": analysis_type,
             }
             
         except Exception as e:

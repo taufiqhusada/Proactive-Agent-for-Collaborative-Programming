@@ -160,11 +160,11 @@ export default {
     },
 
     requestDetailedHelp() {
-      // Send a message to chat requesting detailed help
+      // Send a message to chat requesting detailed help with context
       if (this.socket && this.roomId && this.aiAnalysis) {
         const message = {
           room: this.roomId,
-          content: '@ai Can you provide help with my code execution issue?',
+          content: `@ai I need detailed help with my code execution. Your analysis showed: "${this.aiAnalysis.message}". Can you provide specific guidance on how to address this?`,
           username: 'User',
           userId: this.currentUserId || 'user_' + Date.now(),
           timestamp: new Date().toISOString()
@@ -517,6 +517,16 @@ export default {
 .analysis-content.warning {
   color: #ef6c00;
   background: linear-gradient(135deg, #fffaf0, #fff8e1);
+}
+
+.analysis-content.optimization {
+  color: #1976d2;
+  background: linear-gradient(135deg, #f3f9ff, #e3f2fd);
+}
+
+.analysis-content.success {
+  color: #2e7d32;
+  background: linear-gradient(135deg, #f1f8e9, #e8f5e8);
 }
 
 .more-help-btn {
