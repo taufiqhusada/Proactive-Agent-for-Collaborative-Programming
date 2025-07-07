@@ -788,7 +788,7 @@ export default defineComponent({
             console.log('✅ Code block meets minimum size requirements')
             
             // Change check - only analyze if code actually changed
-            const blockHash = hashCode(codeBlock.code)
+            const blockHash = hashCode(codeBlock.code.trim())
             console.log('🔗 Block hash:', blockHash, 'Last hash:', lastAnalyzedHash.value)
             
             if (blockHash === lastAnalyzedHash.value) {

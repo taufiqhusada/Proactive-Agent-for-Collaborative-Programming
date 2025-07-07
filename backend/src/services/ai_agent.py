@@ -1407,7 +1407,7 @@ class AIAgent:
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=15,
-                temperature=0.1
+                temperature=0.3
             )
             
             analysis = response.choices[0].message.content.strip()

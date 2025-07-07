@@ -3,10 +3,21 @@
   <div 
     v-if="showIssues" 
     class="code-issue-panel"
+    :class="{ 'dragging': isDragging }"
     :style="panelPosition"
   >
-    <!-- Close button -->
-    <button @click="dismissPanel" class="close-btn">×</button>
+    <!-- Draggable header -->
+    <div 
+      class="panel-header"
+      @mousedown="startDragging"
+      ref="dragHandle"
+    >
+      <div class="panel-title">
+        <span class="panel-icon">🔍</span>
+        Code Analysis
+      </div>
+      <button @click="dismissPanel" class="close-btn">×</button>
+    </div>
 
     <!-- Issues List -->
     <div class="issues-container">
@@ -72,8 +83,23 @@ export default {
     return {
       showIssues: false,
       issues: [],
-      panelPosition: { top: '100px', right: '20px' },
-      analysisInProgress: false
+      analysisInProgress: false,
+      // Dragging state
+      isDragging: false,
+      dragOffset: { x: 0, y: 0 },
+      currentPosition: { x: window.innerWidth - 420, y: 100 } // Default position
+    }
+  },
+  
+  computed: {
+    panelPosition() {
+      return {
+        position: 'fixed',
+        left: `${this.currentPosition.x}px`,
+        top: `${this.currentPosition.y}px`,
+        right: 'auto', // Override the right positioning
+        zIndex: this.isDragging ? 1001 : 1000 // Higher z-index when dragging
+      }
     }
   },
   
@@ -115,6 +141,49 @@ export default {
   },
   
   methods: {
+    // Dragging functionality
+    startDragging(event) {
+      this.isDragging = true;
+      this.dragOffset.x = event.clientX - this.currentPosition.x;
+      this.dragOffset.y = event.clientY - this.currentPosition.y;
+      
+      // Add global event listeners
+      document.addEventListener('mousemove', this.onDrag);
+      document.addEventListener('mouseup', this.stopDragging);
+      
+      // Prevent text selection while dragging
+      document.body.style.userSelect = 'none';
+      event.preventDefault();
+    },
+    
+    onDrag(event) {
+      if (!this.isDragging) return;
+      
+      const newX = event.clientX - this.dragOffset.x;
+      const newY = event.clientY - this.dragOffset.y;
+      
+      // Keep panel within viewport bounds
+      const panelWidth = 400; // Width of the panel
+      const panelHeight = 200; // Minimum height to keep visible
+      
+      const maxX = window.innerWidth - panelWidth;
+      const maxY = window.innerHeight - panelHeight;
+      
+      this.currentPosition.x = Math.max(0, Math.min(newX, maxX));
+      this.currentPosition.y = Math.max(0, Math.min(newY, maxY));
+    },
+    
+    stopDragging() {
+      this.isDragging = false;
+      
+      // Remove global event listeners
+      document.removeEventListener('mousemove', this.onDrag);
+      document.removeEventListener('mouseup', this.stopDragging);
+      
+      // Restore text selection
+      document.body.style.userSelect = '';
+    },
+    
     async analyzeCodeBlock(codeBlock) {
       console.log('🔬 analyzeCodeBlock called with:', codeBlock)
       
@@ -168,41 +237,9 @@ export default {
     
     displayIssues(issues, codeBlock) {
       this.issues = issues;
-      this.positionPanel(codeBlock);
       this.showIssues = true;
       
       // Don't auto-dismiss - let user close manually
-    },
-    
-    positionPanel(codeBlock) {
-      // Position panel relative to the code block
-      const viewport = {
-        width: window.innerWidth,
-        height: window.innerHeight
-      };
-      
-      // Try to position on the right side first
-      let top = Math.max(this.editorPosition.top + 50, 50);
-      let right = 20;
-      
-      // Calculate panel position
-      if (viewport.width < 800) {
-        right = 'auto';
-        this.panelPosition = {
-          position: 'fixed',
-          top: top + 'px',
-          left: '20px',
-          right: 'auto',
-          zIndex: 1000
-        };
-      } else {
-        this.panelPosition = {
-          position: 'fixed',
-          top: top + 'px',
-          right: right + 'px',
-          zIndex: 1000
-        };
-      }
     },
     
     getIssueIcon(type) {
@@ -239,6 +276,13 @@ export default {
       this.showIssues = false;
       this.$emit('dismissed');
     }
+  },
+  
+  beforeUnmount() {
+    // Clean up event listeners if component is destroyed while dragging
+    document.removeEventListener('mousemove', this.onDrag);
+    document.removeEventListener('mouseup', this.stopDragging);
+    document.body.style.userSelect = '';
   }
 }
 </script>
@@ -256,17 +300,52 @@ export default {
   z-index: 1000;
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
+  transition: box-shadow 0.2s ease;
+}
+
+.code-issue-panel.dragging {
+  box-shadow: 0 20px 48px rgba(0,0,0,0.25);
+  transition: none;
+}
+
+.panel-header {
+  position: sticky;
+  top: 0;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e1e5e9;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+  user-select: none;
+  border-radius: 8px 8px 0 0;
+}
+
+.panel-header:hover {
+  background: #e9ecef;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.panel-icon {
+  font-size: 16px;
+}
+
+.issues-container {
   padding: 16px;
-  padding-top: 40px; /* Space for close button */
 }
 
 .close-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   background: none;
   border: none;
-  font-size: 20px;
+  font-size: 18px;
   cursor: pointer;
   color: #6c757d;
   padding: 4px;
@@ -276,6 +355,12 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #dc3545;
+  color: white;
 }
 
 .close-btn:hover {
