@@ -724,9 +724,337 @@ class AIAgent:
             self.send_ai_message(room_id, fallback_message)
             print(f"✅ AI responded with fallback to direct mention in room {room_id}")
     
-    # Legacy complex intervention methods removed - replaced by centralized LLM decision
-    # Legacy research-based intervention methods removed - all replaced by centralized LLM decision
+    def analyze_code_block(self, code: str, language: str, context: Dict[str, Any], problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Analyze a code block for potential issues and provide suggestions"""
+        print(f"🔍 Starting code analysis with OpenAI")
+        
+        # Always use OpenAI - assume it's available
+        try:
+            print("🚀 Using OpenAI analysis")
+            # Create analysis prompt with problem context
+            analysis_prompt = self._create_code_analysis_prompt(code, language, context, problem_context)
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert code reviewer and pair programming partner. Analyze code blocks for potential issues, bugs, security vulnerabilities, performance problems, and best practice violations. Consider the problem context when evaluating whether code is appropriate - partial solutions and work-in-progress code should be judged differently than complete solutions. Provide practical, actionable suggestions."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.3
+            )
+            
+            # Parse the response
+            analysis_text = response.choices[0].message.content
 
+            print(f"🔍 Full OpenAI response: {analysis_text}")
+            analysis = self._parse_code_analysis(analysis_text, code, context, problem_context)
+            
+            print(f"📊 Parsed analysis: {analysis}")
+            
+            return {
+                'issues': analysis.get('issues', []),
+                'suggestions': analysis.get('suggestions', []),
+                'timestamp': datetime.now().isoformat(),
+                'confidence': analysis.get('confidence', 'medium')
+            }
+            
+        except Exception as e:
+            print(f"❌ Error in OpenAI code analysis: {e}")
+            # Return empty result if OpenAI fails
+            return {
+                'issues': [],
+                'suggestions': [],
+                'timestamp': datetime.now().isoformat(),
+                'confidence': 'low'
+            }
+    
+    def _mock_code_analysis(self, code: str, language: str, context: Dict[str, Any], problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Provide mock analysis when OpenAI is not available"""
+        issues = []
+        
+        print(f"🔍 Mock analysis with problem context: {problem_context}")
+        
+        # Context-aware analysis based on problem
+        if problem_context:
+            problem_title = problem_context.get('title', '').lower()
+            problem_description = problem_context.get('description', '').lower()
+            
+            # Check if code aligns with problem expectations
+            if 'two sum' in problem_title or 'sum' in problem_title:
+                if 'for' in code and 'range' in code:
+                    # Check for undefined variables in range()
+                    import re
+                    range_matches = re.findall(r'range\(([^)]+)\)', code)
+                    for match in range_matches:
+                        if match.strip() not in ['len(arr)', 'len(nums)', 'len(array)'] and not match.strip().isdigit():
+                            # Check if it's a variable that might be undefined
+                            if match.strip() in ['n', 'm', 'size', 'length'] and match.strip() not in code.replace('range', ''):
+                                issues.append({
+                                    'id': 'undefined_variable',
+                                    'type': 'Bug Risk',
+                                    'severity': 'high',
+                                    'title': f'Undefined Variable: {match.strip()}',
+                                    'description': f'The variable "{match.strip()}" is used in range() but not defined. This will cause a NameError.',
+                                    'suggestedFix': {
+                                        'description': f'Replace {match.strip()} with len(arr) or define the variable',
+                                        'code': f'for i in range(len(arr)):  # Use len(arr) instead of {match.strip()}',
+                                        'explanation': 'Use len(arr) to get the actual length of the array'
+                                    }
+                                })
+                    
+                    # Check for Two Sum logic errors
+                    if 'range(i' not in code and 'range(j' not in code:
+                        # Check if both loops use the same range without offset
+                        if code.count('range(') >= 2:
+                            lines = code.split('\n')
+                            for i, line in enumerate(lines):
+                                if 'for j in range(' in line and 'range(i' not in line:
+                                    issues.append({
+                                        'id': 'two_sum_logic_error',
+                                        'type': 'Logic',
+                                        'severity': 'medium',
+                                        'title': 'Two Sum Logic Error: Using Same Element Twice',
+                                        'description': 'Your inner loop should start from i+1 to avoid using the same element twice and to prevent redundant checks.',
+                                        'suggestedFix': {
+                                            'description': 'Start the inner loop from i+1 instead of 0',
+                                            'code': 'for j in range(i + 1, len(arr)):',
+                                            'explanation': 'This ensures we never use the same element twice and avoid checking the same pair multiple times'
+                                        }
+                                    })
+                    
+                    # This is likely a brute force approach for Two Sum
+                    if code.count('for') >= 2:  # Nested loops
+                        issues.append({
+                            'id': 'two_sum_inefficient',
+                            'type': 'Performance',
+                            'severity': 'medium',
+                            'title': 'Two Sum: Consider Hash Map Approach',
+                            'description': f'For the Two Sum problem, your nested loop approach has O(n²) time complexity. A hash map approach would be O(n).',
+                            'suggestedFix': {
+                                'description': 'Use a hash map to store numbers and their indices for O(1) lookup',
+                                'code': '''def two_sum(nums, target):
+    seen = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []''',
+                                'explanation': 'Hash map provides O(1) average lookup time, reducing overall complexity from O(n²) to O(n)'
+                            }
+                        })
+                    elif 'return' not in code:
+                        issues.append({
+                            'id': 'missing_return',
+                            'type': 'Logic',
+                            'severity': 'low',
+                            'title': 'Missing Return Statement',
+                            'description': 'Your Two Sum solution appears to be missing a return statement.',
+                            'suggestedFix': {
+                                'description': 'Add a return statement to return the indices',
+                                'code': 'return [i, j]  # Return indices when sum equals target',
+                                'explanation': 'The problem expects you to return the indices of the two numbers that add up to the target'
+                            }
+                        })
+        
+        # General bug detection patterns
+        # Check for common undefined variable patterns
+        import re
+        
+        # Check for variables used in range() that might be undefined
+        range_vars = re.findall(r'range\(([^)]+)\)', code)
+        for var in range_vars:
+            var = var.strip()
+            if var in ['n', 'm', 'size', 'length'] and var not in code.replace('range', '').replace('(', '').replace(')', ''):
+                issues.append({
+                    'id': f'undefined_var_{var}',
+                    'type': 'Bug Risk',
+                    'severity': 'high',
+                    'title': f'Undefined Variable: {var}',
+                    'description': f'Variable "{var}" is used but not defined. This will cause a NameError when the code runs.',
+                    'suggestedFix': {
+                        'description': f'Define {var} or use len(array_name) instead',
+                        'code': f'n = len(arr)  # Define {var} before using it',
+                        'explanation': 'Make sure all variables are defined before use'
+                    }
+                })
+        
+        # General pattern-based analysis
+        if 'password' in code.lower() and ('=' in code or ':' in code):
+            issues.append({
+                'id': 'hardcoded_password',
+                'type': 'Security',
+                'severity': 'high',
+                'title': 'Hardcoded Password Detected',
+                'description': 'Hardcoded passwords in source code pose security risks. Use environment variables or secure configuration instead.',
+                'line': context.get('cursorLine', 1),
+                'codeSnippet': code.split('\n')[0] if code else '',
+                'suggestedFix': {
+                    'description': 'Use environment variables for sensitive data',
+                    'code': 'password = os.getenv("DB_PASSWORD")'
+                }
+            })
+        
+        if 'SELECT' in code and '+' in code and 'f"' in code:
+            issues.append({
+                'id': 'sql_injection',
+                'type': 'Security',
+                'severity': 'high',
+                'title': 'Potential SQL Injection',
+                'description': 'String concatenation in SQL queries can lead to SQL injection attacks. Use parameterized queries instead.',
+                'line': context.get('cursorLine', 1),
+                'codeSnippet': code.split('\n')[0] if code else '',
+                'suggestedFix': {
+                    'description': 'Use parameterized queries',
+                    'code': 'cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))'
+                }
+            })
+        
+        if 'for' in code and 'for' in code[code.find('for')+3:]:
+            issues.append({
+                'id': 'nested_loops',
+                'type': 'Performance',
+                'severity': 'medium',
+                'title': 'Nested Loops Detected',
+                'description': 'Multiple nested loops can impact performance with large datasets. Consider optimization.',
+                'line': context.get('cursorLine', 1),
+                'codeSnippet': code.split('\n')[0] if code else '',
+                'suggestedFix': {
+                    'description': 'Consider using list comprehensions or vectorized operations',
+                    'code': '# Use list comprehension or optimize algorithm'
+                }
+            })
+        
+        if '.' in code and 'return' in code and 'if' not in code:
+            issues.append({
+                'id': 'null_reference',
+                'type': 'Bug Risk',
+                'severity': 'medium',
+                'title': 'Potential Null Reference',
+                'description': 'Object method calls without null checks can cause runtime errors.',
+                'line': context.get('cursorLine', 1),
+                'codeSnippet': code.split('\n')[0] if code else '',
+                'suggestedFix': {
+                    'description': 'Add null check before method calls',
+                    'code': 'if user is not None:\n    return user.name'
+                }
+            })
+        
+        return {
+            'issues': issues,
+            'suggestions': [],
+            'timestamp': datetime.now().isoformat(),
+            'confidence': 'medium' if issues else 'low'
+        }
+    
+    def _create_code_analysis_prompt(self, code: str, language: str, context: Dict[str, Any], problem_context: Optional[Dict[str, Any]] = None) -> str:
+        """Create a comprehensive prompt for code analysis"""
+        
+        problem_info = ""
+        if problem_context:
+            problem_info = f"""
+                            PROBLEM CONTEXT:
+                            Title: {problem_context.get('title', 'Unknown')}
+                            Description: {problem_context.get('description', 'No description provided')}
+
+                            IMPORTANT: This code is being written to solve the above problem. Consider whether the approach is:
+                            - Appropriate for the problem requirements
+                            - A reasonable work-in-progress solution
+                            - Following expected algorithmic patterns for this type of problem
+                            - Missing key components needed for the solution
+
+                            """
+        
+        return f"""
+                Analyze this {language} code block for learning purposes:
+
+                ```{language}
+                {code}
+                ```
+
+                Context:
+                - Lines: {context.get('startLine', 1)}-{context.get('endLine', 1)}
+                - Cursor position: Line {context.get('cursorLine', 1)}
+
+                {problem_info}
+
+                IMPORTANT: Provide ONE consolidated issue that covers all problems found.
+                Be concise and educational - focus on learning.
+
+                Analyze for:
+                1. **Undefined Variables**: Variables used but not defined
+                2. **Logic Errors**: Algorithm mistakes, wrong loop bounds  
+                3. **Performance**: Inefficient approaches
+                4. **Bug Risks**: Index errors, type issues
+
+                Combine multiple problems into ONE educational message.
+
+                Format as JSON:
+                {{
+                "issue": {{
+                    "title": "Brief title covering main problem(s)",
+                    "description": "Concise explanation of what's wrong (1-2 sentences)",
+                    "hint": "Quick practical solution (1 sentence)"
+                }}
+                }}
+
+                If code is perfect, return: {{"issue": null}}
+
+                Examples:
+                - "Undefined Variables: Using 'n' and 'm' without defining them. Hint: Use len(arr) instead."
+                - "Inefficient Algorithm: O(n²) nested loops. Hint: Try hash map for O(n) solution."
+                """
+    
+    def _parse_code_analysis(self, analysis_text: str, code: str, context: Dict[str, Any], problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Parse the AI response and create structured analysis"""
+        try:
+            import json
+            
+            # Simple slice to remove ```json and ``` from the response
+            cleaned_text = analysis_text.strip()
+            if cleaned_text.startswith('```json') and cleaned_text.endswith('```'):
+                cleaned_text = cleaned_text[7:-4].strip()
+            
+            analysis = json.loads(cleaned_text)
+            print(analysis)
+            
+            # Handle single-issue format
+            if 'issue' in analysis:
+                issue_data = analysis.get('issue')
+                if issue_data is None:
+                    # No issues found
+                    return {'issues': []}
+                
+                # Convert single issue to array format for frontend
+                single_issue = {
+                    'id': f"issue_{hash(issue_data.get('title', 'unknown'))}",
+                    'type': 'Code Review',
+                    'severity': 'medium',
+                    'title': issue_data.get('title', 'Code Issue'),
+                    'description': issue_data.get('description', 'No description provided'),
+                    'line': context.get('cursorLine', 1),
+                    'codeSnippet': code.split('\n')[0] if code else '',
+                    'suggestedFix': {
+                        'description': issue_data.get('hint', 'No hint provided'),
+                        'code': '',
+                        'explanation': issue_data.get('hint', '')
+                    }
+                }
+                
+                return {'issues': [single_issue]}
+            
+            # Fallback for any other format
+            return {'issues': []}
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing error: {e}")
+            print(f"🔍 Raw response: {analysis_text}")
+            return {'issues': []}
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            return {'issues': []}
+    
 # Global AI agent instance
 ai_agent = None
 

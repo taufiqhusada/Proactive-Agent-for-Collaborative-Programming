@@ -303,5 +303,41 @@ def run_code():
     )
     return jsonify(stdout=proc.stdout, stderr=proc.stderr)
 
+@app.route('/api/analyze-code-block', methods=['POST'])
+def analyze_code_block():
+    """Analyze a code block for potential issues and suggestions"""
+    try:
+        data = request.json
+        code = data.get('code', '')
+        language = data.get('language', 'python')
+        context = data.get('context', {})
+        problem_context = data.get('problemContext', None)
+
+        print(f"📊 Code Analysis Request:")
+        print(f"  Code: {code[:100]}...")
+        print(f"  Language: {language}")
+        print(f"  Context: {context}")
+        # print(f"  Problem Context: {problem_context}")
+        
+        if not code.strip():
+            return jsonify({'issues': []})
+        
+        # Use AI agent to analyze the code with problem context
+        analysis = ai_agent.analyze_code_block(code, language, context, problem_context)
+        
+        result = {
+            'issues': analysis.get('issues', []),
+            'suggestions': analysis.get('suggestions', []),
+            'timestamp': analysis.get('timestamp'),
+            'confidence': analysis.get('confidence', 'medium')
+        }
+
+        print("this is the result", result)
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error analyzing code block: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)

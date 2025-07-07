@@ -23,7 +23,7 @@ export default defineConfig({
         target: env.VITE_BACKEND_URL,
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        // Don't rewrite the path - keep the /api prefix
       },
     },
   },

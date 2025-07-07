@@ -41,7 +41,7 @@
                         :tab-size="2" 
                         :extensions="computedExtensions"
                         @ready="handleReady" 
-                        @update:value="handleCodeChange"
+                        @change="handleCodeChange"
                         class="code-editor" />
                 </div>
             </div>
@@ -56,6 +56,17 @@
                     :username="auth?.user || 'Guest'" />
             </div>
         </div>
+        
+        <!-- Code Issue Analysis Panel -->
+        <CodeIssuePanel 
+            :visible="showCodeAnalysis"
+            :code-block="currentCodeBlock"
+            :editor-position="{ top: 100, left: 0 }"
+            @highlight-line="onHighlightLine"
+            @apply-fix="onApplyFix"
+            @explain-issue="onExplainIssue"
+            @dismissed="onCodeAnalysisDismissed"
+        />
     </div>
 </template>
 
@@ -75,9 +86,11 @@ import { useSocket } from '@/lib/socket'
 import { runCode } from '@/lib/runCode'
 import { debounce } from 'lodash'
 import { useAuth } from '@/stores/useAuth'
+// Code analysis configuration moved inline
 import ProblemDescription from '@/components/ProblemDescription.vue'
 import PairChat from '@/components/PairChat.vue'
 import AIAgentStatus from '@/components/AIAgentStatus.vue'
+import CodeIssuePanel from '@/components/CodeIssuePanel.vue'
 
 export default defineComponent({
     components: {
@@ -85,6 +98,7 @@ export default defineComponent({
         ProblemDescription,
         PairChat,
         AIAgentStatus,
+        CodeIssuePanel,
     },
 
     setup() {
@@ -102,6 +116,14 @@ export default defineComponent({
         const currentUserId = ref('')
         const currentProblem = ref(null)
         const { socket, connect } = useSocket()
+        
+        // Code analysis state
+        const showCodeAnalysis = ref(false)
+        const currentCodeBlock = ref(null)
+        const lastAnalyzedHash = ref('')
+        const analysisDebounceTimer = ref(null)
+        const userTypingTimer = ref(null)
+        const lastTypingTime = ref(0)
 
         const languages = {
             python: python(),
@@ -464,15 +486,69 @@ export default defineComponent({
             isLocalUpdate.value = false
         })
 
+        // Watch for code changes as a fallback
+        watch(code, (newValue, oldValue) => {
+            console.log('👀 Code watcher triggered - new length:', newValue.length, 'old length:', oldValue?.length || 0)
+            
+            if (newValue !== oldValue && !isLocalUpdate.value) {
+                console.log('🔍 Code changed, starting analysis timer...')
+                
+                // Clear existing timer
+                if (userTypingTimer.value) {
+                    clearTimeout(userTypingTimer.value)
+                }
+                
+                // Set new timer - wait for user to stop typing
+                userTypingTimer.value = setTimeout(() => {
+                    console.log('⏰ Code watcher timer expired, analyzing...')
+                    
+                    if (view.value) {
+                        const cursor = view.value.state.selection.main.head
+                        const cursorPos = view.value.state.doc.lineAt(cursor)
+                        onUserStoppedTyping(view.value, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
+                    }
+                }, 2000)
+            }
+        })
+        
         // Prevent code changes in readonly mode
-        const handleCodeChange = (newValue) => {
-            if (isReadOnly.value) {
-                // Don't allow changes in readonly mode
+        const handleCodeChange = (value, viewUpdate) => {
+            console.log('handleCodeChange called with value length:', value.length)
+            
+            if (isLocalUpdate.value) {
+                console.log('🔄 Local update flag set, skipping analysis')
                 return
             }
-            code.value = newValue
+            
+            isLocalUpdate.value = true
+            code.value = value
+            
+            // Emit code change to other users in the room
+            socket.emit('code_change', {
+                room: roomId,
+                code: value,
+                userId: currentUserId.value,
+                language: selectedLanguage.value
+            })
+            
+            // Update room state - handled by backend
+            
+            // Monitor for code analysis
+            if (viewUpdate.view) {
+                console.log('👀 Calling onCursorActivity with view')
+                onCursorActivity(viewUpdate.view)
+            } else {
+                console.log('❌ No view in viewUpdate, skipping cursor activity')
+            }
+            
+            isLocalUpdate.value = false
         }
 
+        const handleCodeUpdate = (value, viewUpdate) => {
+            console.log('🔄 handleCodeUpdate called with value length:', value.length)
+            handleCodeChange(value, viewUpdate)
+        }
+        
         // Watch for socket ID changes (reconnections)
         watch(() => socket.id, (newId) => {
             if (newId) {
@@ -545,21 +621,359 @@ export default defineComponent({
             }
         })
 
+        // Code analysis functions
+        const extractCurrentCodeBlock = (editor, cursor) => {
+            const doc = editor.state.doc
+            const line = cursor.line
+            
+            console.log('🔍 Extracting code block around line:', line + 1)
+            
+            // Get current line to understand the context
+            const currentLineText = doc.line(line + 1).text
+            const currentIndent = getIndentLevel(currentLineText)
+            
+            console.log('📍 Current line text:', currentLineText)
+            console.log('📏 Current indent level:', currentIndent)
+            
+            let startLine = line
+            let endLine = line
+            
+            // Strategy: Find the outermost logical block that contains the cursor
+            // Look backwards to find the start of the complete logical structure
+            let bestStartLine = line
+            let bestStartIndent = currentIndent
+            
+            for (let i = line; i >= 0; i--) {
+                const lineText = doc.line(i + 1).text
+                const indent = getIndentLevel(lineText)
+                
+                // Skip empty lines
+                if (lineText.trim() === '') continue
+                
+                // If we find a line that starts a block and has less indentation, it's a candidate
+                if (isBlockStart(lineText) && indent < bestStartIndent) {
+                    bestStartLine = i
+                    bestStartIndent = indent
+                    console.log('🎯 Found outer block start at line:', i + 1, 'indent:', indent, 'text:', lineText)
+                }
+                
+                // If we find a line with 0 indentation that's not a block start, stop looking
+                if (indent === 0 && !isBlockStart(lineText)) {
+                    break
+                }
+            }
+            
+            startLine = bestStartLine
+            
+            // Find the end of the logical block
+            // Look forwards until we find a line with same or less indentation as the start
+            const startLineText = doc.line(startLine + 1).text
+            const startIndent = getIndentLevel(startLineText)
+            
+            console.log('📍 Using start line:', startLine + 1, 'with indent:', startIndent)
+            
+            for (let i = startLine + 1; i < doc.lines; i++) {
+                const lineText = doc.line(i + 1).text
+                const indent = getIndentLevel(lineText)
+                
+                // If we find a non-empty line with less or equal indentation to start, that's our end
+                if (lineText.trim() !== '' && indent <= startIndent) {
+                    endLine = i - 1 // End at the previous line
+                    console.log('🏁 Found block end at line:', i, 'due to dedent')
+                    break
+                } else if (i === doc.lines - 1) {
+                    endLine = i
+                    console.log('🏁 Block extends to end of file')
+                    break
+                } else {
+                    endLine = i // Keep extending the block
+                }
+            }
+            
+            // Extract code block
+            const codeLines = []
+            for (let i = startLine; i <= endLine; i++) {
+                codeLines.push(doc.line(i + 1).text)
+            }
+            
+            const extractedCode = codeLines.join('\n')
+            console.log('📦 Extracted code block:')
+            console.log(extractedCode)
+            
+            return {
+                code: extractedCode,
+                startLine: startLine + 1, // Convert to 1-based
+                endLine: endLine + 1,
+                cursorLine: line + 1,
+                language: selectedLanguage.value
+            }
+        }
+        
+        const getIndentLevel = (lineText) => {
+            const match = lineText.match(/^(\s*)/)
+            return match ? match[1].length : 0
+        }
+        
+        const isBlockStart = (lineText) => {
+            const trimmed = lineText.trim()
+            if (trimmed === '') return false
+            
+            const patterns = [
+                // Function definitions
+                /^\s*(def|function)\s+\w+.*:/,
+                // Class definitions
+                /^\s*class\s+\w+.*:/,
+                // Control structures
+                /^\s*(if|elif|else|for|while|try|except|finally|with)\s*.*:/,
+                // Method definitions in classes
+                /^\s*(public|private|protected|static)\s+\w+.*\{/,
+                // JavaScript/Java function patterns
+                /^\s*\w+\s*=\s*function.*\{/,
+                /^\s*function\s+\w+.*\{/,
+                // Lambda or arrow functions that start blocks
+                /^\s*\w+\s*=\s*lambda.*:/,
+                // Simple assignment that could start a logical block
+                /^\s*\w+\s*=\s*\[/,  // Array assignment
+                /^\s*\w+\s*=\s*\{/,  // Dict/Object assignment
+                // Common algorithmic patterns
+                /^\s*for\s+\w+\s+in\s+range\s*\(/,  // for i in range(...)
+                /^\s*for\s+\w+\s+in\s+\w+/,        // for item in items
+                /^\s*while\s+\w+/,                  // while condition
+                /^\s*if\s+\w+/,                     // if condition
+            ]
+            return patterns.some(pattern => pattern.test(lineText))
+        }
+        
+        const shouldAnalyzeCodeBlock = (codeBlock) => {
+            console.log('🔍 Checking code block significance...')
+            console.log('📊 Code:', codeBlock.code)
+            console.log('📏 Code length:', codeBlock.code.length)
+            
+            // Check if block is significant enough to analyze
+            const lines = codeBlock.code.split('\n').filter(line => line.trim().length > 0)
+            const chars = codeBlock.code.replace(/\s/g, '').length
+            
+            console.log('📋 Lines:', lines.length, 'Characters:', chars)
+            
+            // Relaxed size check for educational coding - either condition is enough
+            if (lines.length < 3 && chars < 50) {
+                console.log('❌ Failed size check: lines < 3 AND chars < 50')
+                return false
+            }
+            
+            // Skip structure check for simple educational tasks
+            // Students might write simple algorithms that are still worth analyzing
+            console.log('✅ Code block meets minimum size requirements')
+            
+            // Change check - only analyze if code actually changed
+            const blockHash = hashCode(codeBlock.code)
+            console.log('🔗 Block hash:', blockHash, 'Last hash:', lastAnalyzedHash.value)
+            
+            if (blockHash === lastAnalyzedHash.value) {
+                console.log('❌ Failed change check: same as last analyzed block')
+                return false
+            }
+            
+            lastAnalyzedHash.value = blockHash
+            console.log('✅ Code block passed all checks!')
+            return true
+        }
+        
+        const hashCode = (str) => {
+            let hash = 0
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i)
+                hash = ((hash << 5) - hash) + char
+                hash = hash & hash // Convert to 32-bit integer
+            }
+            return hash
+        }
+        
+        const onCursorActivity = (editor) => {
+            console.log('🔍 onCursorActivity triggered')
+            
+            const cursor = editor.state.selection.main.head
+            const cursorPos = editor.state.doc.lineAt(cursor)
+            
+            lastTypingTime.value = Date.now()
+            
+            // Clear existing timer
+            if (userTypingTimer.value) {
+                clearTimeout(userTypingTimer.value)
+            }
+            
+            console.log('⏱️ Setting 2-second timer for code analysis')
+            
+            // Set new timer - wait for user to stop typing
+            userTypingTimer.value = setTimeout(() => {
+                console.log('⏰ Timer expired, analyzing code...')
+                onUserStoppedTyping(editor, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
+            }, 2000) // 2 seconds of inactivity
+        }
+        
+        const onUserStoppedTyping = (editor, cursor) => {
+            console.log('⏹️ User stopped typing, extracting code block...')
+            
+            try {
+                const codeBlock = extractCurrentCodeBlock(editor, cursor)
+                console.log('📝 Extracted code block:', codeBlock)
+                
+                if (shouldAnalyzeCodeBlock(codeBlock)) {
+                    console.log('✅ Code block passed significance test')
+                    // Additional delay to ensure user is really done
+                    setTimeout(() => {
+                        console.log('🚀 Scheduling code analysis...')
+                        scheduleCodeAnalysis(codeBlock)
+                    }, 1000)
+                } else {
+                    console.log('❌ Code block failed significance test')
+                }
+            } catch (error) {
+                console.error('💥 Error in code analysis:', error)
+            }
+        }
+        
+        const scheduleCodeAnalysis = (codeBlock) => {
+            console.log('📅 Scheduling code analysis for:', codeBlock)
+            
+            // Include problem context in the analysis
+            const enhancedCodeBlock = {
+                ...codeBlock,
+                problemContext: currentProblem.value ? {
+                    title: currentProblem.value.title,
+                    description: currentProblem.value.description,
+                    examples: currentProblem.value.examples,
+                    constraints: currentProblem.value.constraints,
+                    difficulty: currentProblem.value.difficulty
+                } : null
+            }
+            
+            console.log('🎯 Enhanced code block with problem context:', enhancedCodeBlock)
+            
+            currentCodeBlock.value = enhancedCodeBlock
+            showCodeAnalysis.value = true
+            console.log('✅ Code analysis panel should be visible now')
+        }
+        
+        const onHighlightLine = (lineNumber) => {
+            // Highlight the problematic line in the editor
+            if (view.value) {
+                const line = view.value.state.doc.line(lineNumber)
+                view.value.dispatch({
+                    selection: { anchor: line.from, head: line.to },
+                    scrollIntoView: true
+                })
+            }
+        }
+        
+        const onApplyFix = (issue) => {
+            // Apply the suggested fix to the code
+            if (view.value && issue.suggestedFix && issue.suggestedFix.code) {
+                const line = view.value.state.doc.line(issue.line)
+                view.value.dispatch({
+                    changes: {
+                        from: line.from,
+                        to: line.to,
+                        insert: issue.suggestedFix.code
+                    }
+                })
+            }
+        }
+        
+        const onExplainIssue = (issue) => {
+            // Send explanation request to chat
+            socket.emit('message', {
+                room: roomId,
+                content: `Can you explain why this is an issue: "${issue.title}"? The code is: ${issue.codeSnippet}`,
+                userId: currentUserId.value,
+                username: auth?.user || 'Guest',
+                timestamp: new Date().toISOString()
+            })
+        }
+        
+        const onCodeAnalysisDismissed = () => {
+            showCodeAnalysis.value = false
+            currentCodeBlock.value = null
+        }
+        
+        // Debug function for testing
+        const testCodeAnalysis = () => {
+            console.log('🧪 Testing code analysis with nested loops...')
+            const testBlock = {
+                code: `for i in range(n):
+    for j in range(m):
+        if arr[i] + arr[j] == target:
+            return [i, j]`,
+                startLine: 1,
+                endLine: 4,
+                cursorLine: 2,
+                language: 'python'
+            }
+            
+            console.log('🔍 Testing shouldAnalyzeCodeBlock...')
+            const shouldAnalyze = shouldAnalyzeCodeBlock(testBlock)
+            console.log('📊 Should analyze?', shouldAnalyze)
+            
+            if (shouldAnalyze) {
+                console.log('✅ Calling scheduleCodeAnalysis...')
+                scheduleCodeAnalysis(testBlock)
+            }
+        }
+        
+        // Debug function for testing current code
+        const debugCurrentCode = () => {
+            console.log('🔍 Debugging current code...')
+            console.log('📝 Current code:', code.value)
+            console.log('📏 Code length:', code.value.length)
+            
+            if (view.value) {
+                const cursor = view.value.state.selection.main.head
+                const cursorPos = view.value.state.doc.lineAt(cursor)
+                console.log('📍 Cursor position:', { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
+                
+                const codeBlock = extractCurrentCodeBlock(view.value, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
+                console.log('🧱 Extracted code block:', codeBlock)
+                
+                const shouldAnalyze = shouldAnalyzeCodeBlock(codeBlock)
+                console.log('🤔 Should analyze?', shouldAnalyze)
+                
+                if (shouldAnalyze) {
+                    scheduleCodeAnalysis(codeBlock)
+                } else {
+                    console.log('❌ Code block does not meet analysis criteria')
+                }
+            } else {
+                console.log('❌ No editor view available')
+            }
+        }
+        
+        // Make test function available globally for debugging
+        window.testCodeAnalysis = testCodeAnalysis
+        
         return {
             code,
             output,
             selectedLanguage,
-            computedExtensions,
-            handleReady,
-            updateLanguage,
-            execute,
-            handleCodeChange,
+            extensions,
+            view,
             isReadOnly,
             roomId,
-            socket,
             currentUserId,
+            currentProblem,
+            computedExtensions,
+            socket,
+            handleReady,
+            handleCodeChange,
+            updateLanguage,
             onProblemChanged,
-            auth
+            auth,
+            // Code analysis
+            showCodeAnalysis,
+            currentCodeBlock,
+            onHighlightLine,
+            onApplyFix,
+            onExplainIssue,
+            onCodeAnalysisDismissed
         }
     }
 })
@@ -794,6 +1208,27 @@ input:checked + .slider:before {
 
 :deep(.cm-activeLine) {
     background-color: rgba(79, 70, 229, 0.05);
+}
+
+/* Debug button styles */
+.debug-btn {
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.debug-btn:hover {
+    background: #4f46e5;
+}
+
+.debug-btn:active {
+    background: #3730a3;
 }
 
 /* Responsive design */
