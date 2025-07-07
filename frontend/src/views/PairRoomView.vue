@@ -83,8 +83,6 @@ import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
 import { java } from '@codemirror/lang-java'
 import { cpp } from '@codemirror/lang-cpp'
-// import { oneDark } from '@codemirror/theme-one-dark'
-// import { basicLight } from '@codemirror/theme-basic-light'
 import { EditorState, StateField, StateEffect } from '@codemirror/state'
 import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 import { useRoute } from 'vue-router'
@@ -92,7 +90,6 @@ import { useSocket } from '@/lib/socket'
 import { runCode } from '@/lib/runCode'
 import { debounce } from 'lodash'
 import { useAuth } from '@/stores/useAuth'
-// Code analysis configuration moved inline
 import ProblemDescription from '@/components/ProblemDescription.vue'
 import PairChat from '@/components/PairChat.vue'
 import AIAgentStatus from '@/components/AIAgentStatus.vue'
@@ -132,6 +129,10 @@ export default defineComponent({
         const analysisDebounceTimer = ref(null)
         const userTypingTimer = ref(null)
         const lastTypingTime = ref(0)
+        
+        // Enhanced detection state
+        const consecutiveEnters = ref(0)
+        const ENTER_THRESHOLD = 2
 
         const languages = {
             python: python(),
@@ -306,6 +307,10 @@ export default defineComponent({
 
         const handleReady = (payload) => {
             view.value = payload.view
+            
+            // Add keyboard event listener for enhanced detection
+            const editorDom = view.value.dom
+            editorDom.addEventListener('keydown', handleKeyDown)
         }
 
         const execute = async () => {
@@ -340,7 +345,6 @@ export default defineComponent({
             sendProblemToBackend(data.problem)
             
             // You can sync the problem selection across users if needed
-            // socket.emit('problem_changed', { room: roomId, problemIndex: data.problemIndex })
         }
 
         // Broadcast current cursor position to other users
@@ -626,6 +630,11 @@ export default defineComponent({
                 socket.off('user_disconnected')
                 socket.off('connect_error')
                 socket.emit('leave', { room: roomId })
+                
+                // Clean up keyboard event listener
+                if (view.value && view.value.dom) {
+                    view.value.dom.removeEventListener('keydown', handleKeyDown)
+                }
             }
         })
 
@@ -797,6 +806,81 @@ export default defineComponent({
             return hash
         }
         
+        // Enhanced detection functions
+        const handleKeyDown = (event) => {
+            if (!view.value) return
+            
+            const editor = view.value
+            const cursor = editor.state.selection.main.head
+            const cursorPos = editor.state.doc.lineAt(cursor)
+            
+            if (event.key === 'Enter') {
+                consecutiveEnters.value++
+                console.log('🔄 Enter pressed, consecutive count:', consecutiveEnters.value)
+                
+                // Check for double Enter trigger
+                if (consecutiveEnters.value >= ENTER_THRESHOLD) {
+                    console.log('🚀 Double Enter detected - triggering immediate analysis')
+                    consecutiveEnters.value = 0
+                    triggerImmediateAnalysis(editor, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
+                    return
+                }
+            } else {
+                // Reset consecutive enters on any other key
+                if (consecutiveEnters.value > 0) {
+                    console.log('🔄 Non-Enter key pressed, resetting consecutive count')
+                    consecutiveEnters.value = 0
+                }
+            }
+        }
+        
+        const triggerImmediateAnalysis = (editor, cursor) => {
+            console.log('⚡ Immediate analysis triggered')
+            
+            // Simple race condition prevention: Don't send if panel is already visible
+            if (showCodeAnalysis.value) {
+                console.log('⚠️ Analysis panel already visible, skipping duplicate request')
+                return
+            }
+            
+            // Clear any existing timer to prevent duplicate analysis
+            if (userTypingTimer.value) {
+                console.log('🔄 Clearing existing timer to prevent race condition')
+                clearTimeout(userTypingTimer.value)
+                userTypingTimer.value = null
+            }
+            
+            // For immediate triggers (double Enter, outdent), we want to analyze the 
+            // most recently completed code block, not necessarily the current cursor position
+            const adjustedCursor = findPreviousCodeBlock(editor, cursor)
+            
+            // Trigger analysis immediately
+            onUserStoppedTyping(editor, adjustedCursor)
+        }
+        
+        const findPreviousCodeBlock = (editor, cursor) => {
+            console.log('🔍 Finding previous code block from cursor position:', cursor)
+            
+            const doc = editor.state.doc
+            const currentLine = cursor.line
+            
+            // Look backwards from current position to find the last non-empty line
+            for (let i = currentLine; i >= 0; i--) {
+                const lineText = doc.line(i + 1).text
+                
+                // Skip empty lines and lines with only whitespace
+                if (lineText.trim() === '') continue
+                
+                // Found a non-empty line - this is likely part of the previous code block
+                console.log('🎯 Found previous code at line:', i + 1, 'text:', lineText)
+                return { line: i, ch: lineText.length }
+            }
+            
+            // If no previous code found, use original cursor position
+            console.log('❌ No previous code found, using original cursor position')
+            return cursor
+        }
+        
         const onCursorActivity = (editor) => {
             console.log('🔍 onCursorActivity triggered')
             
@@ -804,6 +888,12 @@ export default defineComponent({
             const cursorPos = editor.state.doc.lineAt(cursor)
             
             lastTypingTime.value = Date.now()
+            
+            // Simple race condition prevention: Don't set timer if panel is already visible
+            if (showCodeAnalysis.value) {
+                console.log('⚠️ Analysis panel already visible, skipping timer setup')
+                return
+            }
             
             // Clear existing timer
             if (userTypingTimer.value) {
@@ -821,6 +911,12 @@ export default defineComponent({
         
         const onUserStoppedTyping = (editor, cursor) => {
             console.log('⏹️ User stopped typing, extracting code block...')
+            
+            // Simple race condition prevention: Don't send if panel is already visible
+            if (showCodeAnalysis.value) {
+                console.log('⚠️ Analysis panel already visible, skipping duplicate request')
+                return
+            }
             
             try {
                 const codeBlock = extractCurrentCodeBlock(editor, cursor)
@@ -902,6 +998,7 @@ export default defineComponent({
         const onCodeAnalysisDismissed = () => {
             showCodeAnalysis.value = false
             currentCodeBlock.value = null
+            console.log('🔄 Analysis panel dismissed')
         }
         
         // Debug function for testing
