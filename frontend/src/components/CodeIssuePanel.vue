@@ -239,6 +239,21 @@ export default {
       this.issues = issues;
       this.showIssues = true;
       
+      // Determine the highest severity level to update line indicators
+      const severityPriority = { 'high': 3, 'medium': 2, 'low': 1 };
+      const highestSeverity = issues.reduce((highest, issue) => {
+        const currentPriority = severityPriority[issue.severity] || 0;
+        const highestPriority = severityPriority[highest] || 0;
+        return currentPriority > highestPriority ? issue.severity : highest;
+      }, 'medium');
+      
+      // Emit event to update line indicators with the appropriate severity
+      this.$emit('issues-found', {
+        codeBlock,
+        issues,
+        highestSeverity
+      });
+      
       // Don't auto-dismiss - let user close manually
     },
     

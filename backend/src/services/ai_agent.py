@@ -349,7 +349,7 @@ class AIAgent:
                         chunk_base64 = base64.b64encode(chunk).decode('utf-8')
                         chunks_sent.append(chunk_number)
                         
-                        print(f"📦 Streaming PCM chunk {chunk_number}: {len(chunk)} bytes (real-time)")
+                        # print(f"📦 Streaming PCM chunk {chunk_number}: {len(chunk)} bytes (real-time)")
                         
                         # Send chunk immediately as it arrives from OpenAI
                         self.socketio.emit('ai_audio_chunk', {
@@ -371,7 +371,7 @@ class AIAgent:
                 # Send a special "final chunk" marker
                 if chunks_sent:
                     final_chunk_number = chunks_sent[-1]
-                    print(f"🏁 Sending final chunk marker for chunk {final_chunk_number}")
+                    # print(f"🏁 Sending final chunk marker for chunk {final_chunk_number}")
                     
                     # Send a special "final chunk" marker
                     self.socketio.emit('ai_audio_chunk', {
@@ -776,10 +776,10 @@ class AIAgent:
             # Parse the response
             analysis_text = response.choices[0].message.content
 
-            print(f"🔍 Full OpenAI response: {analysis_text}")
+            # print(f"🔍 Full OpenAI response: {analysis_text}")
             analysis = self._parse_code_analysis(analysis_text, code, context, problem_context)
             
-            print(f"📊 Parsed analysis: {analysis}")
+            # print(f"📊 Parsed analysis: {analysis}")
             
             return {
                 'issues': analysis.get('issues', []),

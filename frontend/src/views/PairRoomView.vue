@@ -77,6 +77,7 @@
             @apply-fix="onApplyFix"
             @explain-issue="onExplainIssue"
             @dismissed="onCodeAnalysisDismissed"
+            @issues-found="onIssuesFound"
         />
         
         <!-- Simple Scaffolding Notification -->
@@ -162,6 +163,10 @@ export default defineComponent({
         const setRemoteCursor = StateEffect.define()
         const clearRemoteCursor = StateEffect.define()
         
+        // Effects for managing code analysis line indicators
+        const setCodeAnalysisLines = StateEffect.define()
+        const clearCodeAnalysisLines = StateEffect.define()
+        
         // Widget for displaying remote cursors
         class RemoteCursorWidget extends WidgetType {
             constructor(userId) {
@@ -189,6 +194,46 @@ export default defineComponent({
 
             eq(other) {
                 return other instanceof RemoteCursorWidget && other.userId === this.userId
+            }
+        }
+        
+        // Code Analysis Line Indicator Widget
+        class CodeAnalysisLineWidget extends WidgetType {
+            constructor(severity = 'medium') {
+                super()
+                this.severity = severity
+            }
+            
+            toDOM() {
+                const indicator = document.createElement('div')
+                indicator.className = `code-analysis-line-indicator severity-${this.severity}`
+                
+                // Get color based on severity (matching CodeIssuePanel colors)
+                let color = '#ffc107' // medium/yellow
+                if (this.severity === 'high') color = '#dc3545' // red
+                if (this.severity === 'low') color = '#28a745' // green
+                
+                indicator.style.cssText = `
+                    position: absolute;
+                    left: -6px;
+                    top: 0;
+                    width: 4px;
+                    height: 100%;
+                    background: ${color};
+                    border-radius: 2px;
+                    z-index: 10;
+                    pointer-events: none;
+                    opacity: 0.8;
+                    margin-top: 0;
+                    box-shadow: 0 0 2px rgba(0,0,0,0.2);
+                `
+                
+                console.log(`🎨 Created code analysis indicator with color ${color} for severity ${this.severity}`)
+                return indicator
+            }
+
+            eq(other) {
+                return other instanceof CodeAnalysisLineWidget && other.severity === this.severity
             }
         }
         
@@ -289,6 +334,110 @@ export default defineComponent({
             provide: f => EditorView.decorations.from(f)
         })
 
+        // State field to store code analysis line indicators
+        const codeAnalysisField = StateField.define({
+            create() {
+                return Decoration.none
+            },
+            update(decorations, tr) {
+                decorations = decorations.map(tr.changes)
+                
+                for (let effect of tr.effects) {
+                    if (effect.is(setCodeAnalysisLines)) {
+                        const { startLine, endLine, severity = 'medium' } = effect.value || {}
+                        
+                        // Validate input parameters
+                        if (!startLine || !endLine || typeof startLine !== 'number' || typeof endLine !== 'number') {
+                            console.warn('⚠️ Invalid line numbers in setCodeAnalysisLines effect:', effect.value)
+                            continue
+                        }
+                        
+                        console.log(`Setting code analysis indicators for lines ${startLine}-${endLine} with severity ${severity}`)
+                        
+                        // Clear existing code analysis decorations
+                        try {
+                            decorations = decorations.update({
+                                filter: (from, to, decoration) => {
+                                    if (!decoration || !decoration.spec) return true
+                                    // Filter out both widget and line decorations for code analysis
+                                    const isCodeAnalysisWidget = decoration.spec.widget instanceof CodeAnalysisLineWidget
+                                    const isCodeAnalysisLine = decoration.spec.class && decoration.spec.class.includes('code-analysis-line-mark')
+                                    return !isCodeAnalysisWidget && !isCodeAnalysisLine
+                                }
+                            })
+                        } catch (error) {
+                            console.error('❌ Error clearing existing decorations:', error)
+                        }
+                        
+                        // Add new line indicators
+                        const newDecorations = []
+                        for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+                            try {
+                                if (!tr.state || !tr.state.doc) {
+                                    console.warn('⚠️ Invalid transaction state')
+                                    continue
+                                }
+                                
+                                const line = tr.state.doc.line(lineNum)
+                                if (!line || line.from === undefined) {
+                                    console.warn(`⚠️ Could not get line ${lineNum}`)
+                                    continue
+                                }
+                                
+                                // Try both approaches for better visibility
+                                
+                                // 1. Line decoration approach (applies class to entire line)
+                                const lineMarkDecoration = Decoration.line({
+                                    class: `code-analysis-line-mark severity-${severity}`
+                                }).range(line.from)
+                                
+                                // 2. Widget decoration approach (creates visible indicator)
+                                const widgetDecoration = Decoration.widget({
+                                    widget: new CodeAnalysisLineWidget(severity),
+                                    side: -1
+                                }).range(line.from)
+                                
+                                newDecorations.push(lineMarkDecoration)
+                                
+                                console.log(`🎯 Added line decoration for line ${lineNum} at position ${line.from}`)
+                            } catch (e) {
+                                console.warn(`Could not create decoration for line ${lineNum}:`, e)
+                            }
+                        }
+                        
+                        if (newDecorations.length > 0) {
+                            try {
+                                decorations = decorations.update({
+                                    add: newDecorations
+                                })
+                                console.log(`✅ Successfully added ${newDecorations.length} line decorations`)
+                            } catch (error) {
+                                console.error('❌ Error adding new decorations:', error)
+                            }
+                        }
+                    } else if (effect.is(clearCodeAnalysisLines)) {
+                        console.log('Clearing all code analysis line indicators')
+                        try {
+                            decorations = decorations.update({
+                                filter: (from, to, decoration) => {
+                                    if (!decoration || !decoration.spec) return true
+                                    // Filter out both widget and line decorations for code analysis
+                                    const isCodeAnalysisWidget = decoration.spec.widget instanceof CodeAnalysisLineWidget
+                                    const isCodeAnalysisLine = decoration.spec.class && decoration.spec.class.includes('code-analysis-line-mark')
+                                    return !isCodeAnalysisWidget && !isCodeAnalysisLine
+                                }
+                            })
+                        } catch (error) {
+                            console.error('❌ Error clearing decorations:', error)
+                        }
+                    }
+                }
+                
+                return decorations
+            },
+            provide: f => EditorView.decorations.from(f)
+        })
+
         const updateLanguage = () => {
             const newExtension = languages[selectedLanguage.value]
             extensions.value = [newExtension, ...(isReadOnly.value ? [EditorState.readOnly.of(true)] : [])]
@@ -311,10 +460,10 @@ export default defineComponent({
             }
         })
 
-        // Computed property for extensions that includes readonly state and remote cursors
+        // Computed property for extensions that includes readonly state, remote cursors, and code analysis indicators
         const computedExtensions = computed(() => {
             const langExtension = languages[selectedLanguage.value]
-            const baseExtensions = [langExtension, remoteCursorField, selectionUpdateExtension]
+            const baseExtensions = [langExtension, remoteCursorField, codeAnalysisField, selectionUpdateExtension]
             if (isReadOnly.value) {
                 baseExtensions.push(EditorState.readOnly.of(true))
                 baseExtensions.push(EditorView.editable.of(false))
@@ -1035,7 +1184,7 @@ export default defineComponent({
                     setTimeout(() => {
                         console.log('🚀 Scheduling code analysis...')
                         scheduleCodeAnalysis(codeBlock)
-                    }, 1000)
+                    }, 200)
                 } else {
                     console.log('❌ Code block failed significance test')
                 }
@@ -1060,6 +1209,14 @@ export default defineComponent({
             }
             
             console.log('🎯 Enhanced code block with problem context:', enhancedCodeBlock)
+            
+            // Show immediate feedback that analysis is starting (subtle analyzing indicators)
+            if (codeBlock && typeof codeBlock.startLine === 'number' && typeof codeBlock.endLine === 'number') {
+                showCodeAnalysisLineIndicators(codeBlock.startLine, codeBlock.endLine, 'analyzing')
+                console.log('� Showing analysis-in-progress indicators')
+            } else {
+                console.warn('⚠️ Invalid codeBlock line numbers for indicators:', codeBlock)
+            }
             
             currentCodeBlock.value = enhancedCodeBlock
             showCodeAnalysis.value = true
@@ -1105,7 +1262,13 @@ export default defineComponent({
         const onCodeAnalysisDismissed = () => {
             showCodeAnalysis.value = false
             currentCodeBlock.value = null
-            console.log('🔄 Analysis panel dismissed')
+            
+            // Clear the line indicators when analysis panel is dismissed
+            if (view.value) {
+                clearCodeAnalysisLineIndicators()
+            }
+            
+            console.log('🔄 Analysis panel dismissed and line indicators cleared')
         }
         
         // Debug function for testing
@@ -1159,8 +1322,37 @@ export default defineComponent({
             }
         }
         
-        // Make test function available globally for debugging
+        // Make test functions available globally for debugging
         window.testCodeAnalysis = testCodeAnalysis
+        
+        // Simple test function to add a very visible indicator
+        const testVisibleIndicator = () => {
+            console.log('🎨 Testing highly visible indicator...')
+            
+            if (!view.value) {
+                console.log('❌ Editor not ready')
+                return
+            }
+            
+            // Add a very obvious visual indicator to the first line
+            const firstLine = document.querySelector('.cm-line')
+            if (firstLine) {
+                firstLine.style.borderLeft = '10px solid red'
+                firstLine.style.backgroundColor = 'rgba(255, 0, 0, 0.2)'
+                firstLine.style.paddingLeft = '20px'
+                console.log('✅ Added direct CSS to first line:', firstLine)
+                
+                // Remove after 3 seconds
+                setTimeout(() => {
+                    firstLine.style.borderLeft = ''
+                    firstLine.style.backgroundColor = ''
+                    firstLine.style.paddingLeft = ''
+                    console.log('🧹 Removed direct CSS')
+                }, 3000)
+            } else {
+                console.log('❌ No .cm-line elements found')
+            }
+        }
         
         // Handle chat message from CodeRunner
         const handleCodeRunnerChatMessage = (message) => {
@@ -1448,7 +1640,131 @@ export default defineComponent({
         // ========================
         // END SCAFFOLDING FUNCTIONALITY
         // ========================
+         // Helper functions for managing code analysis line indicators
+        const showCodeAnalysisLineIndicators = (startLine, endLine, severity = 'medium') => {
+            if (!view.value || !view.value.state || !view.value.dispatch) {
+                console.warn('⚠️ Editor view not ready for line indicators')
+                return
+            }
+            
+            // Validate line numbers
+            if (!startLine || !endLine || startLine < 1 || endLine < startLine) {
+                console.warn('⚠️ Invalid line numbers:', { startLine, endLine })
+                return
+            }
+            
+            console.log(`🟡 Showing code analysis line indicators for lines ${startLine}-${endLine} with severity ${severity}`)
+            
+            try {
+                view.value.dispatch({
+                    effects: setCodeAnalysisLines.of({
+                        startLine,
+                        endLine,
+                        severity
+                    })
+                })
+            } catch (error) {
+                console.error('❌ Error showing line indicators:', error)
+            }
+        }
         
+        const clearCodeAnalysisLineIndicators = () => {
+            if (!view.value || !view.value.dispatch) {
+                console.warn('⚠️ Editor view not ready for clearing indicators')
+                return
+            }
+            
+            console.log('🔄 Clearing code analysis line indicators')
+            
+            try {
+                view.value.dispatch({
+                    effects: clearCodeAnalysisLines.of()
+                })
+            } catch (error) {
+                console.error('❌ Error clearing line indicators:', error)
+            }
+        }
+        
+        const updateCodeAnalysisLineIndicators = (startLine, endLine, severity = 'medium') => {
+            // Clear existing indicators and show new ones
+            clearCodeAnalysisLineIndicators()
+            // Add a small delay to ensure clearing completes
+            setTimeout(() => {
+                showCodeAnalysisLineIndicators(startLine, endLine, severity)
+            }, 10)
+        }
+        
+        const onIssuesFound = (data) => {
+            if (!data || typeof data !== 'object') {
+                console.warn('⚠️ Invalid data received in onIssuesFound:', data)
+                return
+            }
+            
+            const { codeBlock, issues, highestSeverity } = data
+            
+            console.log(`🎯 Issues found with severity ${highestSeverity}:`, issues)
+            
+            // Update line indicators with the severity based on analysis results
+            if (codeBlock && codeBlock.startLine && codeBlock.endLine && 
+                typeof codeBlock.startLine === 'number' && typeof codeBlock.endLine === 'number') {
+                updateCodeAnalysisLineIndicators(
+                    codeBlock.startLine, 
+                    codeBlock.endLine, 
+                    highestSeverity || 'medium'
+                )
+            } else {
+                console.warn('⚠️ Invalid codeBlock data for line indicators:', codeBlock)
+            }
+        }
+        
+        // Test function for line indicators
+        const testLineIndicators = () => {
+            console.log('🧪 Testing line indicators...')
+            
+            if (!view.value) {
+                console.log('❌ Editor view not available - waiting for editor to load')
+                // Try again after a short delay
+                setTimeout(() => {
+                    if (view.value) {
+                        console.log('✅ Editor now available, retrying...')
+                        testLineIndicators()
+                    } else {
+                        console.log('❌ Editor still not available after delay')
+                    }
+                }, 1000)
+                return
+            }
+            
+            console.log('📍 Showing test indicators on lines 1-3')
+            showCodeAnalysisLineIndicators(1, 3, 'high')
+            
+            // Check if elements exist in DOM after a short delay
+            setTimeout(() => {
+                const elements = document.querySelectorAll('.code-analysis-line-mark')
+                console.log(`🔍 Found ${elements.length} .code-analysis-line-mark elements in DOM`)
+                elements.forEach((el, i) => {
+                    console.log(`Element ${i}:`, el, 'Styles:', el.style.cssText, 'Classes:', el.className)
+                })
+                
+                // Also check for any CodeMirror line elements
+                const cmLines = document.querySelectorAll('.cm-line')
+                console.log(`📝 Found ${cmLines.length} .cm-line elements`)
+                if (cmLines.length > 0) {
+                    console.log('First 3 lines:', Array.from(cmLines).slice(0, 3))
+                }
+            }, 500)
+            
+            // Test clearing after 5 seconds
+            setTimeout(() => {
+                console.log('🧹 Clearing test indicators')
+                clearCodeAnalysisLineIndicators()
+            }, 5000)
+        }
+        
+        // Make test functions available globally for debugging
+        window.testLineIndicators = testLineIndicators
+        window.testVisibleIndicator = testVisibleIndicator
+
         return {
             code,
             output,
@@ -1473,12 +1789,20 @@ export default defineComponent({
             onApplyFix,
             onExplainIssue,
             onCodeAnalysisDismissed,
+            onIssuesFound,
+            // Code analysis line indicators
+            showCodeAnalysisLineIndicators,
+            clearCodeAnalysisLineIndicators,
+            updateCodeAnalysisLineIndicators,
             // Scaffolding notification
             showScaffoldingNotification,
             scaffoldingNotificationText,
             // Chat handling
             handleCodeRunnerChatMessage,
             pairChat,
+            // Test function
+            testLineIndicators,
+            testVisibleIndicator,
         }
     }
 })
@@ -1816,5 +2140,85 @@ input:checked + .slider:before {
     font-size: 14px;
     font-weight: 500;
     line-height: 1.4;
+}
+
+/* Code Analysis Line Indicators */
+.code-analysis-line-indicator {
+    position: absolute;
+    left: -2px;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-radius: 2px;
+    pointer-events: none;
+    opacity: 0.8;
+    z-index: 10;
+    transition: opacity 0.2s ease;
+}
+
+.code-analysis-line-indicator.severity-high {
+    background: #dc3545;
+    box-shadow: 0 0 4px rgba(220, 53, 69, 0.4);
+}
+
+.code-analysis-line-indicator.severity-medium {
+    background: #ffc107;
+    box-shadow: 0 0 4px rgba(255, 193, 7, 0.4);
+}
+
+.code-analysis-line-indicator.severity-low {
+    background: #28a745;
+    box-shadow: 0 0 4px rgba(40, 167, 69, 0.4);
+}
+
+/* Hover effect for better visibility */
+.cm-editor:hover .code-analysis-line-indicator {
+    opacity: 1;
+}
+
+/* Animation for when indicators appear */
+@keyframes codeAnalysisSlideIn {
+    from {
+        transform: translateX(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 0.8;
+    }
+}
+
+.code-analysis-line-indicator {
+    animation: codeAnalysisSlideIn 0.3s ease-out;
+}
+
+/* Code Analysis Line Decorations - Global styles for CodeMirror */
+:global(.code-analysis-line-mark) {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+:global(.code-analysis-line-mark.severity-high) {
+    border-left: 4px solid #dc3545 !important;
+}
+
+:global(.code-analysis-line-mark.severity-medium) {
+    border-left: 4px solid #ffc107 !important;
+}
+
+:global(.code-analysis-line-mark.severity-low) {
+    border-left: 4px solid #28a745 !important;
+}
+
+/* Analyzing state - more subtle, animated */
+:global(.code-analysis-line-mark.analyzing) {
+    border-left: 3px solid #6c757d !important;
+    opacity: 0.6;
+    animation: analysisIndicatorPulse 2s ease-in-out infinite;
+}
+
+@keyframes analysisIndicatorPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.9; }
 }
 </style>
