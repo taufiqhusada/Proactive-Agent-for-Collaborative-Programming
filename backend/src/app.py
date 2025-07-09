@@ -255,24 +255,18 @@ def ws_voice_activity_detected(data):
     room = data["room"]
     user_id = data["userId"]
     event_type = data["event"]  # 'speechstart' or 'speechend'
-    timestamp = data["timestamp"]
     
     print(f"🎤 Voice activity detected: {event_type} from user {user_id} in room {room}")
     
-    # Only cancel timers on speech start (when user begins speaking)
-    if event_type == 'speechstart':
-        print(f"🚫 Cancelling pending 5-second timers due to voice activity in room {room}")
-        
-        # Cancel any pending intervention timers immediately
-        if room in ai_agent.conversation_history:
-            context = ai_agent.conversation_history[room]
-            if room in ai_agent.pending_timers:
-                ai_agent._cancel_pending_intervention(room, "voice activity detected")
-                print(f"✅ Successfully cancelled pending timer due to voice activity in room {room}")
-            else:
-                print(f"🔍 No pending timer to cancel in room {room}")
-        else:
-            print(f"⚠️ No conversation context found for room {room}")
+    print(f"🚫 Attempting to cancel pending AI agent timers due to voice activity in room {room}")
+
+    # Stateless timer cancellation - only check if timer exists
+    if room in ai_agent.pending_timers:
+        ai_agent._cancel_pending_intervention(room, "voice activity detected")
+        print(f"✅ Successfully cancelled pending AI agent timer due to voice activity in room {room}")
+    else:
+        available_timers = list(ai_agent.pending_timers.keys())
+        print(f"🔍 No pending AI agent timer to cancel in room {room}. Available timers: {available_timers}")
 
 @socketio.on("chat_typing_activity", namespace="/ws")
 def ws_chat_typing_activity(data):
@@ -283,24 +277,18 @@ def ws_chat_typing_activity(data):
     room = data["room"]
     user_id = data["userId"]
     event_type = data["event"]  # 'typing_start'
-    timestamp = data["timestamp"]
     
     print(f"⌨️  Chat typing activity detected: {event_type} from user {user_id} in room {room}")
     
-    # Only cancel timers when user starts typing (active engagement)
-    if event_type == 'typing_start':
-        print(f"🚫 Cancelling pending 5-second timers due to chat typing activity in room {room}")
-        
-        # Cancel any pending intervention timers immediately
-        if room in ai_agent.conversation_history:
-            context = ai_agent.conversation_history[room]
-            if room in ai_agent.pending_timers:
-                ai_agent._cancel_pending_intervention(room, "chat typing activity detected")
-                print(f"✅ Successfully cancelled pending timer due to chat typing in room {room}")
-            else:
-                print(f"🔍 No pending timer to cancel in room {room}")
-        else:
-            print(f"⚠️ No conversation context found for room {room}")
+    print(f"🚫 Attempting to cancel pending AI agent timers due to chat typing activity in room {room}")
+    
+    # Stateless timer cancellation - only check if timer exists
+    if room in ai_agent.pending_timers:
+        ai_agent._cancel_pending_intervention(room, "chat typing activity detected")
+        print(f"✅ Successfully cancelled pending AI agent timer due to chat typing in room {room}")
+    else:
+        available_timers = list(ai_agent.pending_timers.keys())
+        print(f"🔍 No pending AI agent timer to cancel in room {room}. Available timers: {available_timers}")
 
 @socketio.on("disconnect", namespace="/ws")
 def ws_disconnect():

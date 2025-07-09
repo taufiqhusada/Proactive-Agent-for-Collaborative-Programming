@@ -162,13 +162,15 @@ export default defineComponent({
         
         // Voice input state
         const speechSupported = ref(false)
-        const showSpeechWarning = ref(false)
-        const autoRecordingEnabled = ref(false)
-        const isProcessingSpeech = ref(false)
         const speechQueue = ref([])
-        const lastSpeechTime = ref(0)
+        const autoRecordingEnabled = ref(false)
         const currentAutoTranscript = ref('')
+        const isListening = ref(false)
+        const isProcessingSpeech = ref(false)
         const showInviteTooltip = ref(false)
+        const showSpeechWarning = ref(false)
+        const timerStarted = ref(false) // Flag to track if AI timer was started by sending a message
+        const lastSpeechTime = ref(0) // Track when last speech activity occurred
         let autoRecognition = null
         let speechProcessor = null
 
@@ -272,6 +274,10 @@ export default defineComponent({
             
             // Send to socket - make sure we're using the right namespace
             props.socket.emit('chat_message', message)
+            
+            // Set timer flag since sending a message starts the AI timer
+            timerStarted.value = true
+            console.log('🕐 Timer started - message sent, waiting for voice activity to cancel')
             
             newMessage.value = ''
             scrollToBottom()
@@ -670,38 +676,16 @@ export default defineComponent({
             recognitionInstance.onstart = () => {
                 console.log('Auto recognition started')
                 isActive = true
-            }
-            
-            // Voice activity detection for timer cancellation
+              }
+                 // Voice activity detection for timer cancellation
             recognitionInstance.onspeechstart = () => {
                 console.log('🎤 VOICE ACTIVITY DETECTED - User started speaking')
-                
-                // Immediately notify backend to cancel any pending 5-second timers
-                if (props.socket && props.roomId) {
-                    props.socket.emit('voice_activity_detected', {
-                        room: props.roomId,
-                        userId: props.currentUserId,
-                        timestamp: new Date().toISOString(),
-                        event: 'speechstart'
-                    })
-                    console.log('📤 Notified backend of voice activity for timer cancellation')
-                }
             }
-            
-            recognitionInstance.onspeechend = () => {
+              
+              recognitionInstance.onspeechend = () => {
                 console.log('🎤 Voice activity ended - User stopped speaking')
-                
-                // Optional: Notify backend when voice activity ends
-                if (props.socket && props.roomId) {
-                    props.socket.emit('voice_activity_detected', {
-                        room: props.roomId,
-                        userId: props.currentUserId,
-                        timestamp: new Date().toISOString(),
-                        event: 'speechend'
-                    })
-                }
-            }
-            
+              }
+              
             recognitionInstance.onresult = (event) => {
                 // CRITICAL: Ignore all speech recognition results while AI is speaking
                 if (isSpeaking.value) {
@@ -728,6 +712,18 @@ export default defineComponent({
                 }
                 
                 const currentTranscript = (finalTranscript + interimTranscript).trim()
+                
+                // TIMER CANCELLATION: Send when we have transcript and timer was started
+                if (currentTranscript && timerStarted.value && props.socket && props.roomId) {
+                    props.socket.emit('voice_activity_detected', {
+                        room: props.roomId,
+                        userId: props.currentUserId,
+                        timestamp: new Date().toISOString(),
+                        event: 'voice_activity_ongoing'
+                    })
+                    timerStarted.value = false // Turn off flag after sending
+                    console.log('📤 Sent timer cancellation - voice detected after message sent:', currentTranscript.substring(0, 50) + '...')
+                }
                 
                 // For auto mode, queue the speech with timestamp
                 if (currentTranscript) {
@@ -833,15 +829,15 @@ export default defineComponent({
                     try {
                         // If we can start it without an InvalidStateError, it means it wasn't running
                         const testStart = () => {
-                            try {
-                                autoRecognition.start()
-                                console.log('🔄 Restarted stuck voice recognition')
-                            } catch (error) {
-                                if (error.name === 'InvalidStateError') {
-                                    // Already running - this is good
-                                } else {
-                                    console.warn('Voice recognition restart failed:', error)
-                                }
+                          try {
+                            autoRecognition.start()
+                            console.log('🔄 Restarted stuck voice recognition')
+                          } catch (error) {
+                            if (error.name === 'InvalidStateError') {
+                              // Already running - this is good
+                            } else {
+                              console.warn('Voice recognition restart failed:', error)
+                            }
                             }
                         }
                         
@@ -988,6 +984,10 @@ export default defineComponent({
             // Send via socket
             if (props.socket) {
                 props.socket.emit('chat_message', message)
+                
+                // Set timer flag since sending a message starts the AI timer
+                timerStarted.value = true
+                console.log('🕐 Timer started - voice message sent, waiting for voice activity to cancel')
             }
             
             scrollToBottom()
