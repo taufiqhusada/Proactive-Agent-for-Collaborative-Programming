@@ -46,6 +46,9 @@ class ConversationContext:
     
     # Simple timestamp tracking
     last_message_time: Optional[datetime] = None  # When the last message was received
+    
+    # Planning check tracking - only run once per session
+    planning_check_done: bool = False
 
 class AIAgent:
     def __init__(self, socketio_instance):
@@ -211,6 +214,11 @@ class AIAgent:
         self._cancel_pending_intervention(room_id, "code update received")
         print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
         
+        # NEW: Check for planning intervention (only once per session)
+        if not context.planning_check_done:
+            print(f"🔍 Checking for planning intervention in room {room_id}")
+            self._check_planning_intervention(room_id)
+
     def update_problem_context(self, room_id: str, problem_title: str, problem_description: str):
         """Update the current problem description for a room"""
         if room_id not in self.conversation_history:
@@ -1188,23 +1196,17 @@ class AIAgent:
             else:
                 # Fallback response
                 return {
-                    "is_correct": False,
                     "needs_help": True,
-                    "confidence": 50,
-                    "issues": ["Parse failed"],
-                    "help_type": "guidance",
-                    "message": "Want help with your code? 🔍"
+                    "is_correct": False,
+                    "help_message": "Need help? 🤖"
                 }
                 
         except Exception as e:
             logging.error(f"Error parsing execution analysis: {e}")
             return {
-                "is_correct": False,
                 "needs_help": True,
-                "confidence": 0,
-                "issues": ["Parse error"],
-                "help_type": "debug",
-                "message": "Code issue? Let me help! 🛠️"
+                "is_correct": False,
+                "help_message": "Code issue? Let me help! 🛠️"
             }
 
     def _parse_execution_analysis_fast(self, analysis_text: str) -> Dict[str, Any]:
@@ -1672,6 +1674,81 @@ Response:"""
             print(f"🎓 Sent reflection opening message to room {room_id}")
         except Exception as e:
             print(f"❌ Error sending reflection opening: {e}")
+
+    def _check_planning_intervention(self, room_id: str):
+        """Check if planning intervention is needed when code is first written"""
+        try:
+            if not self.client:
+                print("⚠️ Cannot check planning: No LLM client available")
+                return
+            
+            context = self.conversation_history.get(room_id)
+            if not context:
+                return
+            
+            # Mark as done to prevent multiple checks
+            context.planning_check_done = True
+            
+            # Build conversation history for LLM
+            conversation = ""
+            for msg in context.messages:
+                conversation += f"{msg.username}: {msg.content}\n"
+            
+            # Single LLM call to decide if planning intervention is needed
+            prompt = f"""You are CodeBot, an AI pair programming assistant. A user just started writing code.
+
+                        Problem Context: {context.problem_description or context.problem_title or "General coding task"}
+
+                        Conversation so far:
+                        {conversation}
+
+                        Current code being written:
+                        ```{context.programming_language}
+                        {context.code_context[:200]}
+                        ```
+
+                        TASK: Analyze if the users have discussed a proper plan before coding.
+
+                        Good planning indicators:
+                        - Discussed approach, algorithm, or strategy
+                        - Talked about steps or breakdown
+                        - Mentioned data structures or methods to use
+
+                        Respond with ONE of these formats:
+                        - If they have a plan: "NO_INTERVENTION"
+                        - If no planning discussion: "ASK_PLAN|What's your approach? Let's discuss the plan before diving into code!"
+                        - If some discussion but needs more detail: "DETAILED_PLAN|I see you're thinking about this. Can you break down your approach step by step?"
+
+                        Your response:"""
+
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful pair programming assistant focused on encouraging good planning practices."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=100,
+                temperature=0.3
+            )
+            
+            llm_response = response.choices[0].message.content.strip()
+            print(f"🧠 Planning LLM response: {llm_response}")
+            
+            # Parse LLM response and send intervention if needed
+            if llm_response.startswith("ASK_PLAN|") or llm_response.startswith("DETAILED_PLAN|"):
+                parts = llm_response.split("|", 1)
+                if len(parts) >= 2:
+                    intervention_message = parts[1]
+                    print(f"📋 Sending planning intervention: {intervention_message}")
+                    self.send_ai_message(room_id, intervention_message)
+            else:
+                print(f"📋 No planning intervention needed for room {room_id}")
+                
+        except Exception as e:
+            print(f"❌ Error in planning intervention check: {e}")
+            # Mark as done even on error to prevent retries
+            if room_id in self.conversation_history:
+                self.conversation_history[room_id].planning_check_done = True
 
 # Global AI agent instance
 ai_agent = None
