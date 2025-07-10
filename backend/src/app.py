@@ -36,15 +36,23 @@ class ConnectionManager:
     def __init__(self):
         self.rooms = {}      # room_id -> set(sid)
         self.room_state = {} # room_id -> { code: str, language: str }
+        self.user_names = {} # sid -> username mapping
 
-    def join(self, sid: str, room: str):
+    def join(self, sid: str, room: str, username: str = None):
         self.rooms.setdefault(room, set()).add(sid)
+        if username:
+            self.user_names[sid] = username
 
     def leave(self, sid: str, room: str):
         self.rooms.get(room, set()).discard(sid)
         if room in self.rooms and not self.rooms[room]:
             self.rooms.pop(room, None)
             self.room_state.pop(room, None)
+        # Clean up username when user leaves
+        self.user_names.pop(sid, None)
+
+    def get_username(self, sid: str):
+        return self.user_names.get(sid, f"User {sid[-4:]}")
 
     def get_room_state(self, room: str):
         return self.room_state.get(room, {"code": 'print("Hello")', "language": "python"})
@@ -91,13 +99,14 @@ def ws_connect():
 @socketio.on("join", namespace="/ws")
 def ws_join(data):
     room = data["room"]
+    username = data.get("username", "Guest")  # Get username from client
     join_room(room)
-    manager.join(request.sid, room)
+    manager.join(request.sid, room, username)
     
     # Get current room state and send to new user
     room_state = manager.get_room_state(room)
     current_user_count = len(manager.rooms.get(room, set()))
-    print(f"Client {request.sid} joined room {room}, sending state. Users in room: {current_user_count}")
+    print(f"Client {request.sid} ({username}) joined room {room}, sending state. Users in room: {current_user_count}")
     
     # AI agent joins the room when first user joins
     if current_user_count == 1:
@@ -111,7 +120,7 @@ def ws_join(data):
     # Notify other users that someone joined (excluding self)
     emit("user_joined", {
         "userId": request.sid, 
-        "username": f"User {request.sid[-4:]}",
+        "username": username,
         "userCount": current_user_count
     }, room=room, include_self=False)
     
@@ -120,6 +129,7 @@ def ws_join(data):
 @socketio.on("leave", namespace="/ws") 
 def ws_leave(data):
     room = data["room"]
+    username = manager.get_username(request.sid)  # Get stored username
     leave_room(room)
     manager.leave(request.sid, room)
     
@@ -134,7 +144,7 @@ def ws_leave(data):
     # Notify other users that someone left
     emit("user_left", {
         "userId": request.sid,
-        "username": f"User {request.sid[-4:]}",
+        "username": username,
         "userCount": current_user_count
     }, room=room, include_self=False)
 
@@ -309,6 +319,7 @@ def ws_disconnect():
     # Notify other users when someone disconnects
     for room in list(manager.rooms.keys()):
         if request.sid in manager.rooms.get(room, set()):
+            username = manager.get_username(request.sid)  # Get stored username
             manager.leave(request.sid, room)
             current_user_count = len(manager.rooms.get(room, set()))
             
@@ -319,6 +330,7 @@ def ws_disconnect():
             
             emit("user_disconnected", {
                 "userId": request.sid,
+                "username": username,
                 "userCount": current_user_count
             }, room=room, include_self=False)
 

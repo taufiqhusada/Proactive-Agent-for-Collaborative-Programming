@@ -679,10 +679,10 @@ export default defineComponent({
                 onlineUsers.value = data.userCount
             }
             
-            // Add system message
+            // Add system message using the actual joiner's username from backend
             messages.value.push({
                 id: Date.now(),
-                content: `${props.username || 'Someone'} joined the room`,
+                content: `${data.username || 'Someone'} joined the room`,
                 userId: 'system',
                 username: 'System',
                 timestamp: new Date().toISOString(),
@@ -697,10 +697,10 @@ export default defineComponent({
                 onlineUsers.value = data.userCount
             }
             
-            // Add system message
+            // Add system message using the actual leaver's username from backend
             messages.value.push({
                 id: Date.now(),
-                content: `${props.username || 'Someone'} left the room`,
+                content: `${data.username || 'Someone'} left the room`,
                 userId: 'system',
                 username: 'System',
                 timestamp: new Date().toISOString(),
@@ -1519,7 +1519,7 @@ export default defineComponent({
 
                 props.socket.on('user_disconnected', (data) => {
                     console.log('User disconnected:', data)
-                    handleUserCountUpdate(data)
+                    handleUserLeft(data) // Use the same handler as user_left
                 })
 
                 props.socket.on('ai_speech', (data) => {

@@ -863,7 +863,10 @@ export default defineComponent({
                 currentUserId.value = socket.id
                 console.log('Socket connected with ID:', socket.id)
                 
-                socket.emit('join', { room: roomId }, (response) => {
+                socket.emit('join', { 
+                    room: roomId, 
+                    username: auth?.user || 'Guest' 
+                }, (response) => {
                     if (response && response.code) {
                         lastReceivedContent.value = response.code
                         isLocalUpdate.value = true
