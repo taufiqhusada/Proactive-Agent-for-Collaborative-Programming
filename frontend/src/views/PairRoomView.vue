@@ -159,6 +159,9 @@ export default defineComponent({
         const showReflectionSession = ref(false)
         const reflectionSessionId = ref('')
         
+        // Component refs
+        const pairChat = ref(null)
+        
         // Enhanced detection state
         const consecutiveEnters = ref(0)
         const ENTER_THRESHOLD = 2
@@ -1414,9 +1417,6 @@ export default defineComponent({
                 pairChat.value.addMessage(message);
             }
         }
-        
-        // Create ref for PairChat component
-        const pairChat = ref(null)
         
         // ========================
         // SIMPLIFIED SCAFFOLDING FUNCTIONALITY

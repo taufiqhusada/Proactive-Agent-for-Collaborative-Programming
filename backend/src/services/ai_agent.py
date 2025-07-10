@@ -583,17 +583,26 @@ class AIAgent:
             print(f"⚠️ AI RESPONSE LOCK: No context found for room {room_id}")
     
     def join_room(self, room_id: str):
-        """AI agent joins a room"""
-        # Only send greeting if OpenAI client is available
+        """AI agent joins a room (but doesn't send greeting until session starts)"""
+        # Only initialize if OpenAI client is available
         if not self.client:
             print(f"⚠️  CodeBot cannot join room {room_id}: OpenAI client not initialized")
             return
             
-        # Send a greeting message when joining
+        print(f"🤖 CodeBot joined room {room_id} and is ready for session start")
+        # Note: Greeting will be sent when session is explicitly started, not on room join
+    
+    def send_session_start_greeting(self, room_id: str):
+        """Send greeting when session is actually started"""
+        if not self.client:
+            print(f"⚠️  CodeBot cannot send greeting for room {room_id}: OpenAI client not initialized")
+            return
+            
+        # Send a greeting message when session starts
         greeting_messages = [
-            # "Hi! I'm CodeBot, your AI pair programming assistant. I'll help with technical questions, encourage good planning, and facilitate your collaboration. Let's code together!",
-            # "Hello! I'm here to support your pair programming session. I can provide hints when you're stuck, help with code review, and ensure both of you stay engaged. Ready to start?",
-            "Welcome! I'm here to support your pair programming session. I'll offer technical guidance and help maintain productive collaboration."
+            "Welcome! I'm here to support your pair programming session. I'll offer technical guidance and help maintain productive collaboration.",
+            "Hello! Ready to start coding together? I'm here to help with technical questions and keep your collaboration on track.",
+            "Hi! I'm CodeBot, your AI pair programming assistant. Let's build something great together!"
         ]
         
         import random
@@ -601,7 +610,7 @@ class AIAgent:
         
         # Send greeting after a short delay (non-blocking)
         def send_greeting():
-            time.sleep(2)  # Wait 2 seconds before greeting
+            time.sleep(1)  # Wait 1 second before greeting
             self.send_ai_message_text_only(room_id, greeting)
             
         # Start greeting in a separate thread to avoid blocking
@@ -1686,6 +1695,11 @@ Response:"""
             if not context:
                 return
             
+            # Check if there are any user chat messages (indicating session activity)
+            if len(context.messages ) == 0:
+                print("🔍 Planning intervention skipped: No user chat messages yet (session not started)")
+                return
+            
             # Mark as done to prevent multiple checks
             context.planning_check_done = True
             
@@ -1697,29 +1711,30 @@ Response:"""
             # Single LLM call to decide if planning intervention is needed
             prompt = f"""You are CodeBot, an AI pair programming assistant. A user just started writing code.
 
-                        Problem Context: {context.problem_description or context.problem_title or "General coding task"}
+Problem Context: {context.problem_description or context.problem_title or "General coding task"}
 
-                        Conversation so far:
-                        {conversation}
+Conversation so far:
+{conversation}
 
-                        Current code being written:
-                        ```{context.programming_language}
-                        {context.code_context[:200]}
-                        ```
+Current code being written:
+```{context.programming_language}
+{context.code_context[:200]}
+```
 
-                        TASK: Analyze if the users have discussed a proper plan before coding.
+TASK: Analyze if the users have discussed a proper plan before coding.
 
-                        Good planning indicators:
-                        - Discussed approach, algorithm, or strategy
-                        - Talked about steps or breakdown
-                        - Mentioned data structures or methods to use
+Good planning indicators:
+- Discussed approach, algorithm, or strategy
+- Talked about steps or breakdown
+- Mentioned data structures or methods to use
+- Asked questions about the problem
 
-                        Respond with ONE of these formats:
-                        - If they have a plan: "NO_INTERVENTION"
-                        - If no planning discussion: "ASK_PLAN|What's your approach? Let's discuss the plan before diving into code!"
-                        - If some discussion but needs more detail: "DETAILED_PLAN|I see you're thinking about this. Can you break down your approach step by step?"
+Respond with ONE of these formats:
+- If they have a plan: "NO_INTERVENTION"
+- If no planning discussion: "ASK_PLAN|What's your approach? Let's discuss the plan before diving into code!"
+- If some discussion but needs more detail: "DETAILED_PLAN|I see you're thinking about this. Can you break down your approach step by step?"
 
-                        Your response:"""
+Your response:"""
 
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -1749,6 +1764,59 @@ Response:"""
             # Mark as done even on error to prevent retries
             if room_id in self.conversation_history:
                 self.conversation_history[room_id].planning_check_done = True
+
+    def reset_room_state(self, room_id: str):
+        """Reset all AI agent state for a specific room"""
+        try:
+            print(f"🔄 Resetting AI agent state for room {room_id}")
+            
+            # Cancel any pending timers
+            self._cancel_pending_intervention(room_id, "room state reset")
+            
+            # Remove conversation history
+            if room_id in self.conversation_history:
+                del self.conversation_history[room_id]
+                print(f"🗑️ Cleared conversation history for room {room_id}")
+            
+            # Clear execution tracking
+            if room_id in self.execution_attempts:
+                del self.execution_attempts[room_id]
+                print(f"🗑️ Cleared execution attempts for room {room_id}")
+            
+            # Clear validation tasks
+            if room_id in self.validation_tasks:
+                del self.validation_tasks[room_id]
+                print(f"🗑️ Cleared validation tasks for room {room_id}")
+            
+            print(f"✅ Successfully reset AI agent state for room {room_id}")
+            
+            
+        except Exception as e:
+            print(f"❌ Error resetting AI agent state for room {room_id}: {e}")
+
+    def get_room_state_summary(self, room_id: str) -> Dict[str, Any]:
+        """Get a summary of current room state for debugging"""
+        try:
+            context = self.conversation_history.get(room_id)
+            
+            summary = {
+                "room_id": room_id,
+                "has_context": context is not None,
+                "message_count": len(context.messages) if context else 0,
+                "planning_check_done": context.planning_check_done if context else False,
+                "has_code_context": bool(context.code_context) if context else False,
+                "has_problem_context": bool(context.problem_description or context.problem_title) if context else False,
+                "last_ai_response": context.last_ai_response.isoformat() if context and context.last_ai_response else None,
+                "execution_attempts": self.execution_attempts.get(room_id, 0),
+                "has_pending_timer": room_id in self.pending_timers,
+                "has_validation_task": room_id in self.validation_tasks
+            }
+            
+            return summary
+            
+        except Exception as e:
+            print(f"❌ Error getting room state summary: {e}")
+            return {"error": str(e)}
 
 # Global AI agent instance
 ai_agent = None

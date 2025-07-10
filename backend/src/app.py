@@ -554,6 +554,59 @@ def analyze_code_block():
         print(f"Error analyzing code block: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/reset-ai-state', methods=['POST'])
+def reset_ai_state():
+    """Reset AI agent state for a specific room"""
+    try:
+        data = request.json
+        room_id = data.get('room_id')
+        
+        if not room_id:
+            return jsonify({'error': 'room_id is required'}), 400
+        
+        print(f"🔄 Resetting AI state for room: {room_id}")
+        
+        # Get state summary before reset (for debugging)
+        state_before = ai_agent.get_room_state_summary(room_id)
+        
+        # Reset the AI agent state
+        ai_agent.reset_room_state(room_id)
+        
+        # Get state summary after reset
+        state_after = ai_agent.get_room_state_summary(room_id)
+        
+        return jsonify({
+            'success': True,
+            'message': f'AI state reset for room {room_id}',
+            'state_before': state_before,
+            'state_after': state_after
+        })
+        
+    except Exception as e:
+        print(f"Error resetting AI state: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-ai-state', methods=['GET'])
+def get_ai_state():
+    """Get current AI agent state for a specific room (for debugging)"""
+    try:
+        room_id = request.args.get('room_id')
+        
+        if not room_id:
+            return jsonify({'error': 'room_id parameter is required'}), 400
+        
+        state_summary = ai_agent.get_room_state_summary(room_id)
+        
+        return jsonify({
+            'success': True,
+            'room_id': room_id,
+            'state': state_summary
+        })
+        
+    except Exception as e:
+        print(f"Error getting AI state: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/generate-scaffolding', methods=['POST'])
 def generate_scaffolding():
     """Generate code scaffolding using LLM based on user comments"""
@@ -647,6 +700,31 @@ def generate_scaffolding():
             'error': str(e),
             'hasScaffolding': False
         }), 500
+
+# Session control endpoints
+@app.route('/api/start-session', methods=['POST'])
+def start_session():
+    """Start a pair programming session"""
+    try:
+        data = request.get_json()
+        room_id = data.get('room_id')
+        
+        if not room_id:
+            return jsonify({'success': False, 'error': 'Room ID is required'}), 400
+        
+        print(f"🚀 Starting session for room {room_id}")
+        
+        # Send CodeBot greeting for session start
+        ai_agent.send_session_start_greeting(room_id)
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Session started for room {room_id}'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error starting session: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)

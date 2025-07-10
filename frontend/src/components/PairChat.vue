@@ -5,8 +5,62 @@
                 <span class="chat-icon">💬</span>
                 Team Chat
             </h6>
-            <div class="online-users">
-                <span class="user-count">{{ onlineUsers }} online</span>
+            <div class="header-controls">
+                <div class="online-users">
+                    <span class="user-count">{{ onlineUsers }} online</span>
+                </div>
+                
+                <!-- Session Controls -->
+                <div class="session-controls" style="position: relative;">
+                    <!-- Start Session Button (shows when session not started) -->
+                    <button 
+                        v-if="!sessionStarted"
+                        @click="startSession" 
+                        class="start-session-btn"
+                        title="Start Pair Programming Session"
+                    >
+                        Start Session
+                    </button>
+                    
+                    <!-- Reset Session Button (shows when session started) -->
+                    <button 
+                        v-else
+                        @click="showResetWarning = true" 
+                        :disabled="isResetting"
+                        class="reset-session-btn"
+                        title="Reset Session - Clears all code and conversation"
+                    >
+                        {{ isResetting ? 'Resetting...' : 'Reset Session' }}
+                    </button>
+                    
+                    <!-- Reset Warning Popup (near button) -->
+                    <div v-if="showResetWarning" class="reset-warning-popup">
+                        <div class="popup-content">
+                            <div class="popup-header">
+                                <h4>⚠️ Reset Session?</h4>
+                            </div>
+                            <div class="popup-body">
+                                <p>This will clear all messages and reset AI state.</p>
+                            </div>
+                            <div class="popup-actions">
+                                <button @click="showResetWarning = false" class="cancel-btn-small">
+                                    Cancel
+                                </button>
+                                <button @click="confirmResetSession" class="confirm-btn-small" :disabled="isResetting">
+                                    {{ isResetting ? 'Resetting...' : 'Reset' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Success Popup (near button) -->
+                    <div v-if="showSuccessPopup" class="success-popup-small">
+                        <div class="success-content-small">
+                            <span class="success-icon">✅</span>
+                            <span class="success-text">Reset successful!</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -46,15 +100,15 @@
                     v-model="newMessage" 
                     @keyup.enter="sendMessage"
                     @input="handleTypingActivity"
-                    placeholder="Type your message..."
+                    :placeholder="sessionStarted ? 'Type your message...' : 'Start session to begin chatting'"
                     class="message-input"
-                    :disabled="!isConnected"
+                    :disabled="!isConnected || !sessionStarted"
                 />
                 <button 
                     @click="toggleAutoRecording" 
                     :class="['auto-record-button', { active: autoRecordingEnabled }]"
-                    :disabled="!isConnected || !speechSupported"
-                    :title="speechSupported ? (autoRecordingEnabled ? 'Auto-recording active - Click to pause' : 'Enable auto-recording') : 'Speech recognition not supported'"
+                    :disabled="!isConnected || !speechSupported || !sessionStarted"
+                    :title="!sessionStarted ? 'Start session to enable voice features' : (speechSupported ? (autoRecordingEnabled ? 'Auto-recording active - Click to pause' : 'Enable auto-recording') : 'Speech recognition not supported')"
                     ref="autoRecordButton"
                 >
                     <svg v-if="!autoRecordingEnabled" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -198,6 +252,14 @@ export default defineComponent({
         let pcmChannels = 1 // Mono audio
         let pcmBitsPerSample = 16 // 16-bit PCM
         let audioPlaybackTime = 0 // Track when to schedule next audio chunk
+        
+        // AI State Reset
+        const isResetting = ref(false)
+        
+        // Session State
+        const sessionStarted = ref(false)
+        const showResetWarning = ref(false)
+        const showSuccessPopup = ref(false)
 
         const formatTime = (timestamp) => {
             const date = new Date(timestamp)
@@ -1605,6 +1667,145 @@ export default defineComponent({
             }
         }
 
+        // Session control functions
+        const startSession = async () => {
+            console.log('🚀 Starting pair programming session...')
+            sessionStarted.value = true
+            
+            try {
+                // Call backend API to start session and send CodeBot greeting
+                const response = await fetch('/api/start-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room_id: props.roomId
+                    })
+                })
+                
+                const result = await response.json()
+                
+                if (response.ok && result.success) {
+                    console.log('✅ Session started successfully:', result)
+                } else {
+                    console.error('❌ Failed to start session:', result.error)
+                }
+            } catch (error) {
+                console.error('❌ Error starting session:', error)
+            }
+            
+            // No longer adding a system message here - CodeBot will send its greeting
+            scrollToBottom()
+        }
+
+        const confirmResetSession = async () => {
+            console.log('🔄 Confirming session reset...')
+            showResetWarning.value = false
+            isResetting.value = true
+            
+            try {
+                // 1. Reset AI agent state via API
+                const response = await fetch('/api/reset-ai-state', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room_id: props.roomId
+                    })
+                })
+                
+                const result = await response.json()
+                
+                if (response.ok && result.success) {
+                    console.log('✅ AI agent state reset successfully:', result)
+                    
+                    // 2. Clear all chat messages and reset session state
+                    messages.value = []
+                    currentAutoTranscript.value = ''
+                    speechQueue.value = []
+                    isSpeaking.value = false
+                    sessionStarted.value = false
+                    
+                    // 3. Show success popup
+                    showSuccessPopup.value = true
+                    setTimeout(() => {
+                        showSuccessPopup.value = false
+                    }, 3000)
+                    
+                    console.log('✅ Session reset completed - messages cleared and session stopped')
+                    
+                } else {
+                    console.error('❌ Failed to reset session:', result)
+                    alert('Failed to reset session: ' + (result.error || 'Unknown error'))
+                }
+                
+            } catch (error) {
+                console.error('❌ Error resetting session:', error)
+                alert('Error resetting session: ' + error.message)
+            }
+            
+            isResetting.value = false
+        }
+
+        // Enhanced reset AI state function (legacy - replaced by confirmResetSession)
+        const resetAIState = async () => {
+            console.log('🔄 Resetting AI agent state...')
+            isResetting.value = true
+            
+            try {
+                // Call backend API to reset AI agent state
+                const response = await fetch('/api/reset-ai-state', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room_id: props.roomId
+                    })
+                })
+                
+                const result = await response.json()
+                
+                if (response.ok && result.success) {
+                    console.log('✅ AI agent state reset successfully:', result)
+                    
+                    // Reset local chat messages (optional - you might want to keep chat history)
+                    // messages.value = []
+                    
+                    // Reset local speech state
+                    currentAutoTranscript.value = ''
+                    speechQueue.value = []
+                    isSpeaking.value = false
+                    
+                    // Show success message in chat
+                    const resetMessage = {
+                        id: `reset_${Date.now()}`,
+                        content: '🔄 AI agent state has been reset. Fresh start!',
+                        username: 'System',
+                        userId: 'system',
+                        timestamp: new Date().toISOString(),
+                        room: props.roomId,
+                        isSystem: true,
+                        isAI: false
+                    }
+                    messages.value.push(resetMessage)
+                    scrollToBottom()
+                    
+                } else {
+                    console.error('❌ Failed to reset AI agent state:', result)
+                    alert('Failed to reset AI state: ' + (result.error || 'Unknown error'))
+                }
+                
+            } catch (error) {
+                console.error('❌ Error resetting AI agent state:', error)
+                alert('Error resetting AI state: ' + error.message)
+            }
+            
+            isResetting.value = false
+        }
+
         return {
             messages,
             newMessage,
@@ -1622,6 +1823,10 @@ export default defineComponent({
             isSpeaking,
             aiVoiceEnabled,
             isTyping,
+            isResetting,
+            sessionStarted,
+            showResetWarning,
+            showSuccessPopup,
             formatTime,
             sendMessage,
             addMessage,
@@ -1630,7 +1835,9 @@ export default defineComponent({
             toggleAIVoice,
             dismissTooltip,
             handleTypingActivity,
-            handleTypingStart
+            handleTypingStart,
+            startSession,
+            confirmResetSession
         }
     }
 })
@@ -1680,6 +1887,97 @@ export default defineComponent({
     font-weight: 500;
 }
 
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.reset-ai-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #f97316;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.reset-ai-btn:hover:not(:disabled) {
+    background: #ea580c;
+    transform: translateY(-1px);
+}
+
+.reset-ai-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.reset-ai-btn:active {
+    transform: translateY(0);
+}
+
+.session-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.start-session-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.start-session-btn:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+.reset-session-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #fce7e6;
+    color: #dc2626;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.reset-session-btn:hover:not(:disabled) {
+    background: #fca5a5;
+    border-color: #b91c1c;
+    color: #b91c1c;
+    transform: translateY(-1px);
+}
+
+.reset-session-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Chat message styles */
 .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -1854,7 +2152,7 @@ export default defineComponent({
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #4b5563;
+       color: #4b5563;
 }
 
 .auto-record-button:hover:not(:disabled) {
@@ -2002,6 +2300,7 @@ export default defineComponent({
         opacity: 1;
         transform: translateY(0);
     }
+
 }
 
 .voice-feedback {
@@ -2091,71 +2390,254 @@ export default defineComponent({
     color: #d97706;
 }
 
-@keyframes pulse {
-    0%, 100% { 
-        opacity: 1; 
-        transform: scale(1);
-    }
-    50% { 
-        opacity: 0.8;
-        transform: scale(1.05);
-    }
+/* Modal styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
 }
 
-@keyframes rotate {
+.modal {
+    background: white;
+    border-radius: 12px;
+    padding: 0;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+    padding: 1.5rem 1.5rem 0 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #dc2626;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-body p {
+    margin: 0 0 1rem 0;
+    color: #374151;
+}
+
+.warning-text {
+    font-weight: 600;
+    color: #dc2626;
+}
+
+.reset-actions {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.reset-actions li {
+    margin: 0.5rem 0;
+    color: #6b7280;
+}
+
+.warning-note {
+    color: #dc2626;
+    font-weight: 600;
+    text-align: center;
+    padding: 1rem;
+    background: #fef2f2;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.modal-footer {
+    padding: 1rem 1.5rem 1.5rem 1.5rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.cancel-btn {
+    padding: 0.5rem 1rem;
+    background: #f3f4f6;
+    color: #374151;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.cancel-btn:hover {
+    background: #e5e7eb;
+}
+
+.confirm-reset-btn {
+    padding: 0.5rem 1rem;
+    background: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.confirm-reset-btn:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.confirm-reset-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Success Popup */
+.success-popup {
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    background: #10b981;
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 1001;
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
     from {
-        transform: rotate(0deg);
+        transform: translateX(100%);
+        opacity: 0;
     }
     to {
-        transform: rotate(360deg);
+        transform: translateX(0);
+        opacity: 1;
     }
 }
 
-/* Scrollbar styling */
-.chat-messages::-webkit-scrollbar {
-    width: 4px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-    background: #f1f5f9;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 2px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
-
-.ai-speaking-indicator {
+.success-content {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.875rem;
-    color: #10b981;
+}
+
+.success-icon {
+    font-size: 1.25rem;
+}
+
+.success-text {
     font-weight: 500;
-    margin-bottom: 0.5rem;
 }
 
-.ai-icon {
-    font-size: 1rem;
-    animation: speaking-pulse 1s infinite alternate;
+/* Small popups near reset button */
+.reset-warning-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 1001;
+    min-width: 280px;
+    animation: slideDown 0.2s ease-out;
 }
 
-.ai-text {
-    color: #10b981;
+.popup-content {
+    padding: 1rem;
 }
 
-@keyframes speaking-pulse {
+.popup-header h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #f59e0b;
+}
+
+.popup-body p {
+    margin: 0 0 1rem 0;
+    font-size: 0.8rem;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+.popup-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.cancel-btn-small, .confirm-btn-small {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.cancel-btn-small {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.cancel-btn-small:hover {
+    background: #e5e7eb;
+}
+
+.confirm-btn-small {
+    background: #ef4444;
+    color: white;
+}
+
+.confirm-btn-small:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.confirm-btn-small:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.success-popup-small {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: #10b981;
+    color: white;
+    padding: 0.7rem 1rem;
+    border-radius: 6px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 1001;
+    animation: slideDown 0.2s ease-out;
+}
+
+.success-content-small {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+@keyframes slideDown {
     from {
-        opacity: 0.7;
-        transform: scale(1);
+        transform: translateY(-10px);
+        opacity: 0;
     }
     to {
+        transform: translateY(0);
         opacity: 1;
-        transform: scale(1.1);
     }
 }
 </style>
