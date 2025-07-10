@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import asyncio
+from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -182,12 +183,15 @@ def ws_chat_message(data):
     print(f"WS chat message from {request.sid} in room {data['room']}")
     room = data["room"]
     
-    # Broadcast chat message to all other clients in the room
-    emit("chat_message", data, room=room, include_self=False)
+    # Broadcast chat message - include self for system messages, exclude for regular messages
+    include_self = data.get('isSystem', False)
+    emit("chat_message", data, room=room, include_self=include_self)
     
     # Process message with AI agent in a separate thread
     def process_ai_message():
+        print(f"🤖 Processing AI message for room {room}")
         ai_agent.process_message_sync(data)
+        print(f"🤖 AI message processing completed for room {room}")
     
     threading.Thread(target=process_ai_message, daemon=True).start()
 
@@ -249,14 +253,18 @@ def ws_code_execution(data):
 @socketio.on("voice_activity_detected", namespace="/ws")
 def ws_voice_activity_detected(data):
     """
-    Handle voice activity detection from frontend to cancel pending 5-second timers.
-    This provides much faster timer cancellation than waiting for completed messages.
+    Handle voice activity detection from frontend to cancel pending timers.
+    Frontend decides what type of timer to cancel.
     """
+    print(f"🎤 === VOICE ACTIVITY EVENT RECEIVED ===")
+    print(f"🎤 Data: {data}")
+    
     room = data["room"]
     user_id = data["userId"]
     event_type = data["event"]  # 'speechstart' or 'speechend'
+    timer_type = data.get("timer_type", "ai_agent")  # 'ai_agent' or 'reflection'
     
-    print(f"🎤 Voice activity detected: {event_type} from user {user_id} in room {room}")
+    print(f"🎤 Voice activity: {event_type} from user {user_id} in room {room}, timer_type: {timer_type}")
     
     print(f"🚫 Attempting to cancel pending AI agent timers due to voice activity in room {room}")
 
@@ -271,14 +279,15 @@ def ws_voice_activity_detected(data):
 @socketio.on("chat_typing_activity", namespace="/ws")
 def ws_chat_typing_activity(data):
     """
-    Handle chat typing activity detection from frontend to cancel pending 5-second timers.
-    This provides immediate timer cancellation when users start typing in chat input.
+    Handle chat typing activity detection from frontend to cancel pending timers.
+    Frontend decides what type of timer to cancel.
     """
     room = data["room"]
     user_id = data["userId"]
     event_type = data["event"]  # 'typing_start'
+    timer_type = data.get("timer_type", "ai_agent")  # 'ai_agent' or 'reflection'
     
-    print(f"⌨️  Chat typing activity detected: {event_type} from user {user_id} in room {room}")
+    print(f"⌨️  Chat typing: {event_type} from user {user_id} in room {room}, timer_type: {timer_type}")
     
     print(f"🚫 Attempting to cancel pending AI agent timers due to chat typing activity in room {room}")
     
@@ -400,97 +409,75 @@ def execute_code(code, language):
                 ["node", "-e", code],
                 capture_output=True, 
                 text=True, 
-                timeout=10,
-                cwd=tempfile.gettempdir()
+                timeout=10
             )
             
         elif language == 'java':
-            # Execute Java code (simplified - single class)
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.java', delete=False) as f:
-                # Simple wrapper for Java code
-                if 'public class' not in code:
-                    java_code = f'''
-public class TempClass {{
-    public static void main(String[] args) {{
-        {code}
-    }}
-}}'''
-                else:
-                    java_code = code
+            # Execute Java code
+            with tempfile.NamedTemporaryFile(suffix=".java", delete=False) as source_file:
+                source_file.write(code.encode())
+                source_file.flush()
                 
-                f.write(java_code)
-                java_file = f.name
-            
-            try:
-                # Compile Java
+                class_name = os.path.basename(source_file.name)[:-5]  # Remove .java extension
+                jar_file = source_file.name + ".jar"
+                
+                # Compile and package as JAR
                 compile_proc = subprocess.run(
-                    ["javac", java_file],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=tempfile.gettempdir()
+                    ["javac", source_file.name, "-d", tempfile.gettempdir()],
+                    capture_output=True, text=True
                 )
                 
                 if compile_proc.returncode != 0:
                     return {
                         'output': '',
-                        'error': f'Compilation error: {compile_proc.stderr}',
+                        'error': compile_proc.stderr,
                         'exitCode': compile_proc.returncode,
-                        'executionTime': (time.time() - start_time) * 1000
+                        'executionTime': 0
                     }
                 
-                # Run Java
-                class_name = os.path.splitext(os.path.basename(java_file))[0]
+                # Execute the compiled Java class
                 proc = subprocess.run(
                     ["java", "-cp", tempfile.gettempdir(), class_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=tempfile.gettempdir()
+                    capture_output=True, text=True, timeout=10
                 )
                 
-            finally:
-                # Clean up
+                # Clean up class and JAR files
                 try:
-                    os.unlink(java_file)
-                    os.unlink(java_file.replace('.java', '.class'))
+                    os.remove(os.path.join(tempfile.gettempdir(), class_name + ".class"))
+                    os.remove(jar_file)
                 except:
                     pass
-                    
-        elif language == 'cpp':
-            # Execute C++ code
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
-                f.write(code)
-                cpp_file = f.name
             
+        elif language == 'c':
+            # Execute C code
             try:
-                # Compile C++
-                exe_file = cpp_file.replace('.cpp', '.exe')
-                compile_proc = subprocess.run(
-                    ["g++", cpp_file, "-o", exe_file],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=tempfile.gettempdir()
-                )
-                
-                if compile_proc.returncode != 0:
-                    return {
-                        'output': '',
-                        'error': f'Compilation error: {compile_proc.stderr}',
-                        'exitCode': compile_proc.returncode,
-                        'executionTime': (time.time() - start_time) * 1000
-                    }
-                
-                # Run C++
-                proc = subprocess.run(
-                    [exe_file],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=tempfile.gettempdir()
-                )
-                
+                with tempfile.NamedTemporaryFile(suffix=".c", delete=False) as source_file:
+                    source_file.write(code.encode())
+                    source_file.flush()
+                    
+                    cpp_file = source_file.name
+                    exe_file = cpp_file[:-2]  # Remove .c extension for executable
+                    
+                    # Compile the C code
+                    compile_proc = subprocess.run(
+                        ["gcc", cpp_file, "-o", exe_file],
+                        capture_output=True, text=True
+                    )
+                    
+                    if compile_proc.returncode != 0:
+                        return {
+                            'output': '',
+                            'error': compile_proc.stderr,
+                            'exitCode': compile_proc.returncode,
+                            'executionTime': 0
+                        }
+                    
+                    # Execute the compiled program
+                    proc = subprocess.run(
+                        [exe_file],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    
             finally:
                 # Clean up
                 try:

@@ -11,6 +11,15 @@
                     AI Assistant Active
                 </div>
             </div>
+            <!-- Reflection Button -->
+            <button 
+                @click="$emit('start-reflection')"
+                :disabled="reflectionActive"
+                class="reflection-button-small"
+                title="Start learning reflection"
+            >
+                🎓 Reflect
+            </button>
         </div>
         <div class="ai-description">
             <p class="ai-desc-text">
@@ -29,8 +38,13 @@ export default defineComponent({
         isActive: {
             type: Boolean,
             default: true
+        },
+        reflectionActive: {
+            type: Boolean,
+            default: false
         }
-    }
+    },
+    emits: ['start-reflection']
 })
 </script>
 
@@ -40,8 +54,8 @@ export default defineComponent({
     border: 1px solid #0ea5e9;
     border-radius: 12px;
     padding: 1rem;
-    margin-bottom: 1rem;
     box-shadow: 0 2px 8px rgba(14, 165, 233, 0.1);
+    width: 100%;
 }
 
 .ai-indicator {
@@ -115,5 +129,31 @@ export default defineComponent({
     color: #475569;
     line-height: 1.4;
     margin: 0;
+}
+
+.reflection-button-small {
+    background: linear-gradient(135deg, #7dd3fc 0%, #38bdf8 100%);
+    color: #1e293b;
+    border: none;
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(125, 211, 252, 0.3);
+    margin-left: 0.5rem;
+}
+
+.reflection-button-small:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(125, 211, 252, 0.4);
+}
+
+.reflection-button-small:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
 }
 </style>

@@ -58,13 +58,20 @@
 
             <!-- Right Panel: Chat -->
             <div class="right-panel">
-                <AIAgentStatus />
+                <div class="ai-status-section">
+                    <AIAgentStatus 
+                        :reflectionActive="showReflectionSession"
+                        @start-reflection="startReflectionSession"
+                    />
+                </div>
+                
                 <PairChat 
                     ref="pairChat"
                     :socket="socket" 
                     :room-id="roomId" 
                     :current-user-id="currentUserId"
-                    :username="auth?.user || 'Guest'" />
+                    :username="auth?.user || 'Guest'"
+                    :reflection-session-id="reflectionSessionId" />
             </div>
         </div>
         
@@ -147,6 +154,10 @@ export default defineComponent({
         // Scaffolding notification state
         const showScaffoldingNotification = ref(false)
         const scaffoldingNotificationText = ref('')
+        
+        // Simple reflection state (no highlighting)
+        const showReflectionSession = ref(false)
+        const reflectionSessionId = ref('')
         
         // Enhanced detection state
         const consecutiveEnters = ref(0)
@@ -513,6 +524,48 @@ export default defineComponent({
             // You can sync the problem selection across users if needed
         }
 
+        // Simple Reflection session functions
+        const startReflectionSession = () => {
+            console.log('🎓 Starting simple reflection session for room:', roomId)
+            const sessionId = 'reflection_' + Date.now()
+            reflectionSessionId.value = sessionId
+            showReflectionSession.value = true
+            
+            console.log('🎓 Set reflection session ID:', sessionId)
+            
+            // Send a system message that will trigger reflection
+            socket.emit('chat_message', {
+                content: '🎓 Learning Reflection Session Started',
+                username: 'System',
+                userId: 'system',
+                room: roomId,
+                isAI: false,
+                isSystem: true,
+                isReflectionTrigger: true,  // Special flag to trigger AI reflection
+                timestamp: new Date().toISOString()
+            })
+        }
+        
+        const endReflectionSession = () => {
+            console.log('🎓 Ending simple reflection session')
+            showReflectionSession.value = false
+            reflectionSessionId.value = ''
+            
+            // Send end reflection to backend (optional - for logging)
+            socket.emit('end_reflection', { room: roomId })
+            
+            // Send a simple end message
+            socket.emit('chat_message', {
+                content: '🎓 Reflection session ended',
+                username: 'System',
+                userId: 'system',
+                room: roomId,
+                isAI: false,
+                isSystem: true,
+                timestamp: new Date().toISOString()
+            })
+        }
+        
         // Broadcast current cursor position to other users
         const broadcastCursor = debounce(() => {
             if (view.value && !isReadOnly.value) {
@@ -1797,6 +1850,11 @@ export default defineComponent({
             // Scaffolding notification
             showScaffoldingNotification,
             scaffoldingNotificationText,
+            // Simple reflection session
+            showReflectionSession,
+            reflectionSessionId,
+            startReflectionSession,
+            endReflectionSession,
             // Chat handling
             handleCodeRunnerChatMessage,
             pairChat,
@@ -2220,5 +2278,27 @@ input:checked + .slider:before {
 @keyframes analysisIndicatorPulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 0.9; }
+}
+
+/* AI Status Section with Small Reflection Button */
+.ai-status-section {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+/* Reflection Code Highlights */
+:global(.reflection-highlight-line) {
+    background: linear-gradient(90deg, rgba(125, 211, 252, 0.15) 0%, rgba(125, 211, 252, 0.08) 100%) !important;
+    border-left: 4px solid #38bdf8 !important;
+    animation: reflectionHighlight 2s ease-in-out infinite;
+}
+
+@keyframes reflectionHighlight {
+    0%, 100% { 
+        background: linear-gradient(90deg, rgba(125, 211, 252, 0.15) 0%, rgba(125, 211, 252, 0.08) 100%) !important;
+    }
+    50% { 
+        background: linear-gradient(90deg, rgba(125, 211, 252, 0.25) 0%, rgba(125, 211, 252, 0.15) 100%) !important;
+    }
 }
 </style>

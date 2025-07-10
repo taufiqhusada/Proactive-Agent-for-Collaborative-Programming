@@ -153,10 +153,7 @@ class AIAgent:
         if not room_id:
             return
             
-        # Skip AI's own messages
-        if message_data.get('userId') == self.agent_id:
-            return
-            
+        # Include ALL messages (user and AI) for reflection context
         message = Message(
             id=message_data.get('id', ''),
             content=message_data.get('content', ''),
@@ -181,6 +178,8 @@ class AIAgent:
         
         # Cancel any pending intervention since user is active
         self._cancel_pending_intervention(room_id, "new message received")
+
+        print(f"💬 New message added to context in room {room_id}: {message.content[:50]}...")
         
         # Check for direct AI mention (@AI keyword) - PRIORITY RESPONSE
         if self._is_direct_ai_mention(message.content):
@@ -226,6 +225,12 @@ class AIAgent:
 
     def should_respond(self, room_id: str) -> bool:
         """Simple decision making for AI intervention after 5-second idle"""
+        # Check if room is in reflection mode - if so, skip normal AI responses
+        from services.reflection_service import reflection_service
+        if reflection_service and reflection_service.is_room_in_reflection(room_id):
+            print(f"🎓 AI WILL NOT RESPOND: Room {room_id} is in reflection mode")
+            return False
+            
         if room_id not in self.conversation_history:
             print(f"🚫 AI WILL NOT RESPOND: No conversation history for room {room_id}")
             return False
@@ -418,7 +423,7 @@ class AIAgent:
             
             return None
 
-    async def send_ai_message_with_audio(self, room_id: str, content: str):
+    async def send_ai_message_with_audio(self, room_id: str, content: str, is_reflection: bool = False):
         """Send an AI message to the chat room with streaming audio - optimized for speed"""
         message = {
             'id': f"ai_{int(time.time() * 1000)}",
@@ -428,6 +433,7 @@ class AIAgent:
             'timestamp': datetime.now().isoformat(),
             'room': room_id,
             'isAI': True,
+            'isReflection': is_reflection,
             'hasAudio': True,  # Will have streaming audio
             'isStreaming': True  # Indicate this is a streaming response
         }
@@ -440,6 +446,9 @@ class AIAgent:
         
         # Send message immediately (don't wait for audio)
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
+        
+        # Add AI message to conversation context so reflection can see it
+        self.add_message_to_context(message)
         
         # Generate streaming audio in parallel (non-blocking)
         def generate_and_stream_audio():
@@ -465,7 +474,7 @@ class AIAgent:
         # Start audio streaming in a separate thread
         threading.Thread(target=generate_and_stream_audio, daemon=True).start()
     
-    def send_ai_message_text_only(self, room_id: str, content: str):
+    def send_ai_message_text_only(self, room_id: str, content: str, is_reflection: bool = False):
         """Send an AI message to the chat room without audio"""
         message = {
             'id': f"ai_{int(time.time() * 1000)}",
@@ -475,6 +484,7 @@ class AIAgent:
             'timestamp': datetime.now().isoformat(),
             'room': room_id,
             'isAI': True,
+            'isReflection': is_reflection,
             'hasAudio': False
         }
         
@@ -484,40 +494,63 @@ class AIAgent:
             
         # Emit the message to the room (no audio)
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
+        
+        # Add AI message to conversation context so reflection can see it
+        self.add_message_to_context(message)
     
-    def send_ai_message(self, room_id: str, content: str):
+    def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False):
         """Send an AI message to the chat room (optimized sync version)"""
         try:
             # Try to use existing event loop if available
             try:
                 loop = asyncio.get_running_loop()
-                asyncio.create_task(self.send_ai_message_with_audio(room_id, content))
+                asyncio.create_task(self.send_ai_message_with_audio(room_id, content, is_reflection))
                 return
             except RuntimeError:
                 # No running loop - use thread pool to avoid blocking
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self.send_ai_message_with_audio(room_id, content))
+                    future = executor.submit(asyncio.run, self.send_ai_message_with_audio(room_id, content, is_reflection))
                     return
         except Exception as e:
             # Fallback to simple text-only message
-            self.send_ai_message_text_only(room_id, content)
+            self.send_ai_message_text_only(room_id, content, is_reflection)
         
     def process_message_sync(self, message_data: Dict[str, Any]):
         """Process a new message and potentially respond"""
         try:
+            # Add message to context first
+            self.add_message_to_context(message_data)
+            
+            room_id = message_data.get('room')
+            if not room_id or room_id not in self.conversation_history:
+                return
+            
+            # Check if this is a reflection trigger (system message starting reflection)
+            if message_data.get('isReflectionTrigger', False):
+                print(f"🎓 Reflection trigger detected: Starting reflection response for room {room_id}")
+                self._send_reflection_opening(room_id)
+                return
+            
+            # Check if this is reflection mode
+            is_reflection = message_data.get('isReflectionMode', False)
+            print(message_data)
+            print(is_reflection)
+
+            if is_reflection:
+                print(f"🎓 Reflection mode: Starting 5s timer for room {room_id}")
+                # Always respond after 5s in reflection mode
+                self._schedule_reflection_response(room_id)
+                return
+            
+            # Regular AI logic
             # Check if this is a direct AI mention BEFORE adding to context
             is_direct_mention = self._is_direct_ai_mention(message_data.get('content', ''))
             
-            # Add message to context (this will handle direct mentions and return early)
-            self.add_message_to_context(message_data)
-            
             # Only start timer for non-direct mentions
             if not is_direct_mention:
-                room_id = message_data.get('room')
-                if room_id and room_id in self.conversation_history:
-                    # Start new 5-second idle timer
-                    self._schedule_idle_intervention(room_id)
+                # Start new 5-second idle timer
+                self._schedule_idle_intervention(room_id)
                 
         except Exception as e:
             print(f"Error processing message in AI agent: {e}")
@@ -552,7 +585,7 @@ class AIAgent:
         greeting_messages = [
             # "Hi! I'm CodeBot, your AI pair programming assistant. I'll help with technical questions, encourage good planning, and facilitate your collaboration. Let's code together!",
             # "Hello! I'm here to support your pair programming session. I can provide hints when you're stuck, help with code review, and ensure both of you stay engaged. Ready to start?",
-            "Welcome! I'm CodeBob, designed to enhance your pair programming experience. I'll offer technical guidance and help maintain productive collaboration."
+            "Welcome! I'm here to support your pair programming session. I'll offer technical guidance and help maintain productive collaboration."
         ]
         
         import random
@@ -717,7 +750,7 @@ class AIAgent:
         
         # Single-word AI mention keywords
         ai_keywords = {
-            '@ai', '@codebot', 'codebot', 'bob', 'help'
+            '@ai', '@codebot', 'codebot', 'bob'
         }
         
         # Check if any word is an AI keyword
@@ -1504,6 +1537,141 @@ class AIAgent:
                 loop.close()
             except:
                 pass
+
+    def _schedule_reflection_response(self, room_id: str):
+        """Schedule a reflection response after 5 seconds"""
+        # Cancel any existing timer
+        self._cancel_pending_intervention(room_id, "new reflection message")
+        
+        # Start new 5-second timer for reflection
+        timer = threading.Timer(5.0, self._send_reflection_response, args=[room_id])
+        self.pending_timers[room_id] = timer
+        timer.start()
+        print(f"🎓 Scheduled reflection response in 5 seconds for room {room_id}")
+    
+    def _send_reflection_response(self, room_id: str):
+        """Send a reflection-specific AI response"""
+        try:
+            if room_id not in self.conversation_history:
+                print(f"❌ No conversation history for room {room_id}")
+                return
+            
+            print(f"🎓 Generating reflection response for room {room_id}")
+            
+            # Generate response using the existing method but with reflection context
+            ai_response = self._generate_reflection_response_sync(room_id)
+            
+            if ai_response:
+                # Send as reflection message
+                self.send_ai_message(room_id, ai_response, is_reflection=True)
+                print(f"🎓 Sent reflection response to room {room_id}")
+            else:
+                print(f"❌ Failed to generate reflection response for room {room_id}")
+            
+            # Clean up timer
+            if room_id in self.pending_timers:
+                del self.pending_timers[room_id]
+                
+        except Exception as e:
+            print(f"❌ Error sending reflection response: {e}")
+    
+    def _generate_reflection_response_sync(self, room_id: str) -> Optional[str]:
+        """Generate a reflection response synchronously"""
+        try:
+            if not self.client:
+                print("⚠️  Cannot generate reflection response: OpenAI client not initialized")
+                return "What did you find challenging?"
+            
+            context = self.conversation_history[room_id]
+            
+            # Get current code from context (not connection_manager)
+            current_code = context.code_context
+            language = context.programming_language
+            
+            print(f"🎓 DEBUG: Reflection prompt code context: '{current_code[:100] if current_code else 'EMPTY'}'")
+            print(f"🎓 DEBUG: Language: '{language}'")
+            
+            # Create reflection prompt
+            reflection_prompt = self._create_reflection_prompt(context, current_code, language)
+            print(f"🎓 Reflection prompt: {reflection_prompt}")
+            
+            # Generate response using OpenAI
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a supportive programming tutor. Keep responses very short (1-2 sentences max). Ask simple, focused questions to help students reflect."},
+                    {"role": "user", "content": reflection_prompt}
+                ],
+                max_tokens=50,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"❌ Error generating reflection response: {e}")
+            return "What was the trickiest part?"
+    
+    def _create_reflection_prompt(self, context, current_code: str, language: str) -> str:
+        """Create a reflection-specific prompt"""
+        recent_messages = context.messages[-5:] if context.messages else []
+        print(f"🎓 DEBUG: Recent messages for reflection: {recent_messages}")
+        
+        # Build conversation including both user and AI messages, but exclude system messages
+        conversation_lines = []
+        for msg in recent_messages:
+            if not msg.content.startswith("🎓"):  # Skip system reflection messages
+                conversation_lines.append(f"{msg.username}: {msg.content}")
+        
+        # Also try to get recent AI messages from the room (they might not be in context)
+        # This is a workaround since AI messages are filtered out of the context
+        conversation = "\n".join(conversation_lines)
+        
+        # Include problem context if available
+        problem_section = ""
+        if context.problem_description or context.problem_title:
+            problem_text = context.problem_description or context.problem_title
+            problem_section = f"""Problem: {problem_text}
+
+"""
+        
+        return f"""You are a supportive programming tutor helping students reflect on their learning and deepen their understanding. Keep responses very short and focused.
+
+{problem_section}Current code:
+```{language}
+{current_code}
+```
+
+Follow this progression for reflection questions (1-2 sentences max):
+
+PRIORITY 1 - Code Understanding (start here):
+- "How does [specific part of their code] work?"
+- "What's this function doing?"
+- "Can you walk me through this logic?"
+
+PRIORITY 2 - Once they show understanding, explore deeper:
+- Algorithm concepts: "What's the time complexity of your approach?"
+- Alternatives: "Can you think of a different way to solve this?"
+- Improvements: "How might you optimize this code?"
+- Edge cases: "What if the input was empty/negative/huge?"
+
+If they ask for help or seem stuck, provide brief guidance instead of asking questions.
+
+Recent conversation:
+{conversation}
+
+IMPORTANT: Review the conversation above. Do NOT repeat any question you've already asked. If the student has already answered a question, move on to the next one. Build on what they've shared.
+
+Response:"""
+
+    def _send_reflection_opening(self, room_id: str):
+        """Send the opening reflection question immediately"""
+        try:
+            opening_message = "What did you learn today?"
+            self.send_ai_message(room_id, opening_message, is_reflection=True)
+            print(f"🎓 Sent reflection opening message to room {room_id}")
+        except Exception as e:
+            print(f"❌ Error sending reflection opening: {e}")
 
 # Global AI agent instance
 ai_agent = None
