@@ -601,8 +601,7 @@ class AIAgent:
         # Send a greeting message when session starts
         greeting_messages = [
             "Welcome! I'm here to support your pair programming session. I'll offer technical guidance and help maintain productive collaboration.",
-            "Hello! Ready to start coding together? I'm here to help with technical questions and keep your collaboration on track.",
-            "Hi! I'm CodeBot, your AI pair programming assistant. Let's build something great together!"
+           
         ]
         
         import random

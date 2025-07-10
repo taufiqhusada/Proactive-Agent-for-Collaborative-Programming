@@ -54,9 +54,13 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Initialize AI Agent and Scaffolding Service
+# Initialize AI Agent, Scaffolding Service, and Reflection Service
 ai_agent = init_ai_agent(socketio)
 scaffolding_service = ScaffoldingService()
+
+# Initialize Reflection Service
+from services.reflection_service import init_reflection_service
+reflection_service = init_reflection_service(socketio)
 
 # Track active scaffolding requests to prevent duplicates
 active_scaffolding_requests = {}  # {comment_id: {'timestamp': time, 'user_id': request.sid}}
@@ -319,6 +323,78 @@ def ws_disconnect():
             }, room=room, include_self=False)
 
 
+# Reflection toggle handler
+@socketio.on("toggle_reflection", namespace="/ws")
+def ws_toggle_reflection(data):
+    """Handle reflection session toggle (start/stop)"""
+    try:
+        room = data.get("room")
+        action = data.get("action")  # "start" or "stop"
+        
+        if not room:
+            print("❌ Toggle reflection: No room specified")
+            return
+        
+        print(f"🎓 Reflection toggle request: {action} for room {room}")
+        
+        # Import reflection service
+        from services.reflection_service import get_reflection_service
+        reflection_service = get_reflection_service()
+        
+        if not reflection_service:
+            print("❌ Toggle reflection: Reflection service not available")
+            emit("reflection_error", {
+                "message": "Reflection service not available"
+            }, room=room)
+            return
+        
+        if action == "start":
+            # Get current room state for reflection context
+            room_state = manager.get_room_state(room)
+            current_code = room_state.get("code", "")
+            language = room_state.get("language", "python")
+            
+            # Start reflection session
+            session_id = reflection_service.start_reflection_session(
+                room_id=room,
+                final_code=current_code,
+                language=language,
+                problem_description="Current coding session",
+                chat_history=[]  # Could enhance this with actual chat history
+            )
+            
+            if session_id:
+                print(f"✅ Started reflection session {session_id}")
+                # Broadcast reflection started to all users
+                emit("session_state_changed", {
+                    'action': 'reflection_started',
+                    'room': room,
+                    'session_id': session_id,
+                    'message': 'Reflection session started'
+                }, room=room)
+            else:
+                print("❌ Failed to start reflection session")
+                
+        elif action == "stop":
+            # End reflection session for this room
+            success = reflection_service.end_reflection_session_by_room(room)
+            if success:
+                print(f"✅ Stopped reflection session for room {room}")
+                # Broadcast reflection stopped to all users
+                emit("session_state_changed", {
+                    'action': 'reflection_stopped',
+                    'room': room,
+                    'message': 'Reflection session ended'
+                }, room=room)
+            else:
+                print(f"❌ No active reflection session found for room {room}")
+                
+    except Exception as e:
+        print(f"❌ Error toggling reflection: {e}")
+        emit("reflection_error", {
+            "message": f"Error toggling reflection: {str(e)}"
+        }, room=data.get("room"))
+
 # REST API
 @app.route("/", methods=["GET"])
 def root():
@@ -575,6 +651,13 @@ def reset_ai_state():
         # Get state summary after reset
         state_after = ai_agent.get_room_state_summary(room_id)
         
+        # Broadcast session reset to all users in the room
+        socketio.emit('session_state_changed', {
+            'action': 'session_reset',
+            'room': room_id,
+            'message': 'Session reset'
+        }, room=room_id, namespace='/ws')
+        
         return jsonify({
             'success': True,
             'message': f'AI state reset for room {room_id}',
@@ -716,6 +799,13 @@ def start_session():
         
         # Send CodeBot greeting for session start
         ai_agent.send_session_start_greeting(room_id)
+        
+        # Broadcast session started to all users in the room
+        socketio.emit('session_state_changed', {
+            'action': 'session_started',
+            'room': room_id,
+            'message': 'Session started'
+        }, room=room_id, namespace='/ws')
         
         return jsonify({
             'success': True, 

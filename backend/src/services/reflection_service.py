@@ -189,6 +189,29 @@ class ReflectionService:
             return True
         return False
     
+    def end_reflection_session_by_room(self, room_id: str) -> bool:
+        """End any active reflection session for a room (for user-initiated toggle off)"""
+        session = self.get_active_reflection_session(room_id)
+        if session:
+            # Cancel any pending timers for this room
+            self._cancel_pending_timer(room_id, "user ended reflection session")
+            
+            # Mark session as inactive
+            session.is_active = False
+            
+            # Send a simple end message without ceremonial ending
+            self.socketio.emit('reflection_ended', {
+                'session_id': session.session_id,
+                'message': 'Reflection session ended. Back to regular coding assistance!',
+                'summary': None,  # No summary for user-initiated end
+                'hasAudio': False,  # No audio for quick toggle
+                'user_initiated': True  # Flag to indicate user ended it
+            }, room=room_id, namespace='/ws')
+            
+            print(f"🎓 User ended reflection session {session.session_id} for room {room_id}")
+            return True
+        return False
+    
     def is_room_in_reflection(self, room_id: str) -> bool:
         """Check if a room currently has an active reflection session"""
         for session in self.active_sessions.values():

@@ -62,6 +62,7 @@
                     <AIAgentStatus 
                         :reflectionActive="showReflectionSession"
                         @start-reflection="startReflectionSession"
+                        @stop-reflection="stopReflectionSession"
                     />
                 </div>
                 
@@ -71,7 +72,9 @@
                     :room-id="roomId" 
                     :current-user-id="currentUserId"
                     :username="auth?.user || 'Guest'"
-                    :reflection-session-id="reflectionSessionId" />
+                    :reflection-session-id="reflectionSessionId" 
+                    @reflection-session-started="handleReflectionSessionStarted"
+                    @reflection-session-ended="handleReflectionSessionEnded" />
             </div>
         </div>
         
@@ -529,28 +532,43 @@ export default defineComponent({
 
         // Simple Reflection session functions
         const startReflectionSession = () => {
-            console.log('🎓 Starting simple reflection session for room:', roomId)
+            console.log('🎓 Starting reflection session for room:', roomId)
+            
+            // Use socket-based toggle instead of direct message
+            socket.emit('toggle_reflection', {
+                room: roomId,
+                action: 'start'
+            })
+            
+            // Update local state immediately for UI responsiveness
             const sessionId = 'reflection_' + Date.now()
             reflectionSessionId.value = sessionId
             showReflectionSession.value = true
             
             console.log('🎓 Set reflection session ID:', sessionId)
+        }
+        
+        const stopReflectionSession = () => {
+            console.log('🎓 Stopping reflection session for room:', roomId)
             
-            // Send a system message that will trigger reflection
-            socket.emit('chat_message', {
-                content: '🎓 Learning Reflection Session Started',
-                username: 'System',
-                userId: 'system',
-                room: roomId,
-                isAI: false,
-                isSystem: true,
-                isReflectionTrigger: true,  // Special flag to trigger AI reflection
-                timestamp: new Date().toISOString()
-            })
+            // Add confirmation dialog to prevent accidental exits
+            if (confirm('Are you sure you want to exit reflection mode? You can always start a new reflection session later.')) {
+                // Use socket-based toggle to stop reflection
+                socket.emit('toggle_reflection', {
+                    room: roomId,
+                    action: 'stop'
+                })
+                
+                // Update local state immediately
+                showReflectionSession.value = false
+                reflectionSessionId.value = ''
+                
+                console.log('🎓 Reflection session stopped locally')
+            }
         }
         
         const endReflectionSession = () => {
-            console.log('🎓 Ending simple reflection session')
+            console.log('🎓 Ending simple reflection session (legacy method)')
             showReflectionSession.value = false
             reflectionSessionId.value = ''
             
@@ -929,6 +947,12 @@ export default defineComponent({
                 }
             })
 
+            // Session state synchronization
+            socket.on('session_state_changed', (data) => {
+                console.log('🔄 PairRoomView: Session state changed:', data)
+                handleSessionStateChange(data)
+            })
+
             return () => {
                 socket.off('connect')
                 socket.off('update')
@@ -941,6 +965,7 @@ export default defineComponent({
                 socket.off('scaffolding-lock-acquired')
                 socket.off('scaffolding-completed')
                 socket.off('scaffolding-lock-released')
+                socket.off('session_state_changed')
                 socket.emit('leave', { room: roomId })
                 
                 // Clean up keyboard event listener
@@ -1418,6 +1443,47 @@ export default defineComponent({
             }
         }
         
+        // Handle session state changes for synchronization across users
+        const handleSessionStateChange = (data) => {
+            console.log('🔄 PairRoomView: Handling session state change:', data)
+            
+            if (data.action === 'reflection_started') {
+                // Another user started reflection - update local state
+                if (!showReflectionSession.value) {
+                    showReflectionSession.value = true
+                    reflectionSessionId.value = data.session_id || 'reflection_' + Date.now()
+                    console.log('📡 Reflection started by another user - updating local state')
+                }
+            } else if (data.action === 'reflection_stopped') {
+                // Another user stopped reflection - update local state
+                if (showReflectionSession.value) {
+                    showReflectionSession.value = false
+                    reflectionSessionId.value = ''
+                    console.log('📡 Reflection stopped by another user - updating local state')
+                }
+            }
+            
+            // Other session actions (session_started, session_reset) are handled by PairChat
+            // but we can add notifications here if needed
+            if (data.message && (data.action === 'reflection_started' || data.action === 'reflection_stopped')) {
+                console.log('ℹ️ Session state notification:', data.message)
+                // Could add a toast notification here if desired
+            }
+        }
+        
+        // Handle reflection session events from PairChat
+        const handleReflectionSessionStarted = (sessionId) => {
+            console.log('🎓 PairRoomView: Reflection session started event from PairChat:', sessionId)
+            showReflectionSession.value = true
+            reflectionSessionId.value = sessionId
+        }
+        
+        const handleReflectionSessionEnded = () => {
+            console.log('🎓 PairRoomView: Reflection session ended event from PairChat')
+            showReflectionSession.value = false
+            reflectionSessionId.value = ''
+        }
+        
         // ========================
         // SIMPLIFIED SCAFFOLDING FUNCTIONALITY
         // ========================
@@ -1854,9 +1920,13 @@ export default defineComponent({
             showReflectionSession,
             reflectionSessionId,
             startReflectionSession,
+            stopReflectionSession,
             endReflectionSession,
             // Chat handling
             handleCodeRunnerChatMessage,
+            handleSessionStateChange,
+            handleReflectionSessionStarted,
+            handleReflectionSessionEnded,
             pairChat,
             // Test function
             testLineIndicators,
@@ -2167,7 +2237,7 @@ input:checked + .slider:before {
     color: white;
     padding: 12px 16px;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0   4px 12px rgba(0, 0, 0, 0.15);
     z-index: 1000;
     max-width: 300px;
     animation: slideInRight 0.3s ease-out;

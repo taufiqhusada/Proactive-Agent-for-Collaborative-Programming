@@ -212,7 +212,7 @@ export default defineComponent({
             default: ''
         }
     },
-    emits: ['reflection-session-started'],
+    emits: ['reflection-session-started', 'reflection-session-ended'],
     setup(props, { emit }) {
         const messages = ref([])
         const newMessage = ref('')
@@ -1553,6 +1553,12 @@ export default defineComponent({
                     handleAudioError(data)
                 })
 
+                // Session state synchronization events
+                props.socket.on('session_state_changed', (data) => {
+                    console.log('🔄 Session state changed:', data)
+                    handleSessionStateChange(data)
+                })
+
                 // Reflection session event listeners
                 props.socket.on('reflection_started', (data) => {
                     console.log('🎓 FRONTEND: Reflection session started event received:', data)
@@ -1586,20 +1592,26 @@ export default defineComponent({
                     if (data.session_id === props.reflectionSessionId) {
                         addReflectionMessage(data.message, 'CodeBot', true, false, data.hasAudio || false)
                         
-                        // Add session summary if available
-                        if (data.summary) {
+                        // Add session summary if available (only for natural endings, not user-initiated)
+                        if (data.summary && !data.user_initiated) {
                             const summaryText = `Session Summary: ${data.summary.questions_discussed} questions discussed, ${data.summary.code_sections_reviewed} code sections reviewed.`
                             addReflectionMessage(summaryText, 'System', false, true, false)
                         }
                         
-                        // Add end separator
-                        addReflectionMessage('─── 🎓 Reflection Session Complete ───', 'System', false, true, false)
+                        // Add appropriate end separator
+                        const separatorText = data.user_initiated 
+                            ? '─── 🎓 Reflection Mode Disabled ───'
+                            : '─── 🎓 Reflection Session Complete ───'
+                        addReflectionMessage(separatorText, 'System', false, true, false)
                     }
                 })
 
                 props.socket.on('reflection_error', (data) => {
                     console.error('❌ Reflection error:', data)
-                    addReflectionMessage(`Error: ${data.message}`, 'System', false, true, false)
+                    const userFriendlyMessage = data.message.includes('not available') 
+                        ? 'Reflection feature is temporarily unavailable. Please try again later.'
+                        : `Reflection error: ${data.message}`
+                    addReflectionMessage(userFriendlyMessage, 'System', false, true, false)
                 })
             }
         })
@@ -1631,6 +1643,7 @@ export default defineComponent({
                 props.socket.off('ai_audio_complete', handleAudioStreamComplete)
                 props.socket.off('ai_audio_done', handleAudioStreamDone)
                 props.socket.off('ai_audio_error', handleAudioError)
+                props.socket.off('session_state_changed', handleSessionStateChange)
             }
         })
 
@@ -1804,6 +1817,52 @@ export default defineComponent({
             }
             
             isResetting.value = false
+        }
+
+        const handleSessionStateChange = (data) => {
+            console.log('🔄 PairChat: Handling session state change:', data)
+            
+            if (data.action === 'session_started') {
+                // Update session started state if not initiated by this user
+                if (!sessionStarted.value) {
+                    sessionStarted.value = true
+                    console.log('📡 Session started by another user - updating local state')
+                }
+            } else if (data.action === 'session_reset') {
+                // Update session state if not initiated by this user
+                if (sessionStarted.value || messages.value.length > 0) {
+                    sessionStarted.value = false
+                    messages.value = []
+                    currentAutoTranscript.value = ''
+                    speechQueue.value = []
+                    isSpeaking.value = false
+                    console.log('📡 Session reset by another user - updating local state')
+                }
+            } else if (data.action === 'reflection_started') {
+                // Emit reflection started event to parent components
+                emit('reflection-session-started', data.session_id || 'reflection_' + Date.now())
+                console.log('📡 Reflection started by another user - notifying parent')
+            } else if (data.action === 'reflection_stopped') {
+                // Emit reflection stopped event to parent components
+                emit('reflection-session-ended')
+                console.log('📡 Reflection stopped by another user - notifying parent')
+            }
+            
+            // Show notification message for cross-user actions
+            if (data.message) {
+                const notification = {
+                    id: 'session_sync_' + Date.now(),
+                    content: `ℹ️ ${data.message}`,
+                    username: 'System',
+                    userId: 'system',
+                    timestamp: new Date().toISOString(),
+                    room: props.roomId,
+                    isSystem: true,
+                    isNotification: true
+                }
+                messages.value.push(notification)
+                scrollToBottom()
+            }
         }
 
         return {
