@@ -1464,6 +1464,13 @@ export default defineComponent({
                     reflectionSessionId.value = ''
                     console.log('📡 Reflection stopped by another user - updating local state')
                 }
+            } else if (data.action === 'session_reset') {
+                // Session was reset - end any active reflection
+                if (showReflectionSession.value) {
+                    showReflectionSession.value = false
+                    reflectionSessionId.value = ''
+                    console.log('📡 Session reset - ending reflection session')
+                }
             }
             
             // Other session actions (session_started, session_reset) are handled by PairChat

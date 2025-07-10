@@ -2,13 +2,13 @@
     <div class="ai-agent-status">
         <div class="ai-indicator">
             <div class="ai-avatar">
-                <span class="ai-emoji">🤖</span>
+                <span class="ai-emoji">👨‍💻</span>
             </div>
             <div class="ai-info">
-                <div class="ai-name">CodeBob</div>
+                <div class="ai-name">Bob</div>
                 <div class="ai-status">
                     <span class="status-dot" :class="{ 'reflection-mode': reflectionActive }"></span>
-                    {{ reflectionActive ? 'Reflection Mode Active' : 'AI Assistant Active' }}
+                    {{ reflectionActive ? 'Reflection Mode Active' : 'AI Teammate Active' }}
                 </div>
             </div>
             <!-- Reflection Toggle Button -->
@@ -31,8 +31,8 @@
         </div>            <div class="ai-description">
                 <p class="ai-desc-text">
                     {{ reflectionActive 
-                        ? 'CodeBob is guiding your learning reflection. You can exit anytime!' 
-                        : 'CodeBob is listening and can jump in to help!' }}
+                        ? 'Bob is guiding your learning reflection. You can exit anytime!' 
+                        : 'Hi, I am Bob, your proactive AI teammate. I am listening and can jump in to help!' }}
                 </p>
             </div>
     </div>

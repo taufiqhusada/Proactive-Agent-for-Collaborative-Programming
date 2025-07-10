@@ -166,7 +166,7 @@
                 </div>
                 <div v-if="isSpeaking" class="ai-speaking-indicator">
                     <span class="ai-icon">🤖</span>
-                    <span class="ai-text">CodeBot speaking (recording paused)</span>
+                    <span class="ai-text">Bob speaking (recording paused)</span>
                 </div>
                 <div v-if="currentAutoTranscript && autoRecordingEnabled && !isSpeaking" class="auto-transcript">
                     <strong>Voice:</strong> "{{ currentAutoTranscript }}"
@@ -1574,14 +1574,14 @@ export default defineComponent({
                         addReflectionMessage('─── 🎓 Learning Reflection Session Started ───', 'System', false, true, false)
                     }
                     
-                    addReflectionMessage(data.message, 'CodeBot', true, false, data.hasAudio || false)
+                    addReflectionMessage(data.message, 'Bob', true, false, data.hasAudio || false)
                     console.log('🎓 FRONTEND: Added reflection messages to chat')
                 })
 
                 props.socket.on('reflection_message', (data) => {
                     console.log('🎓 FRONTEND: Reflection message event received:', data)
                     if (data.session_id === props.reflectionSessionId) {
-                        addReflectionMessage(data.message, 'CodeBot', true, false, data.hasAudio || false)
+                        addReflectionMessage(data.message, 'Bob', true, false, data.hasAudio || false)
                     } else {
                         console.log('🎓 FRONTEND: Session ID mismatch, ignoring message')
                     }
@@ -1590,7 +1590,7 @@ export default defineComponent({
                 props.socket.on('reflection_ended', (data) => {
                     console.log('🎓 Reflection session ended:', data)
                     if (data.session_id === props.reflectionSessionId) {
-                        addReflectionMessage(data.message, 'CodeBot', true, false, data.hasAudio || false)
+                        addReflectionMessage(data.message, 'Bob', true, false, data.hasAudio || false)
                         
                         // Add session summary if available (only for natural endings, not user-initiated)
                         if (data.summary && !data.user_initiated) {
@@ -1659,7 +1659,7 @@ export default defineComponent({
             const message = {
                 id: Date.now() + Math.random(), // Ensure uniqueness
                 content: content,
-                userId: isAI ? 'ai_agent_codebot' : 'system',
+                userId: isAI ? 'ai_agent_bob' : 'system',
                 username: username,
                 timestamp: new Date().toISOString(),
                 room: props.roomId,
@@ -1686,7 +1686,7 @@ export default defineComponent({
             sessionStarted.value = true
             
             try {
-                // Call backend API to start session and send CodeBot greeting
+                // Call backend API to start session and send Bob greeting
                 const response = await fetch('/api/start-session', {
                     method: 'POST',
                     headers: {
@@ -1708,7 +1708,7 @@ export default defineComponent({
                 console.error('❌ Error starting session:', error)
             }
             
-            // No longer adding a system message here - CodeBot will send its greeting
+            // No longer adding a system message here - Bob will send its greeting
             scrollToBottom()
         }
 
@@ -1734,20 +1734,32 @@ export default defineComponent({
                 if (response.ok && result.success) {
                     console.log('✅ AI agent state reset successfully:', result)
                     
-                    // 2. Clear all chat messages and reset session state
+                    // 2. Stop any active reflection session (always emit end event to ensure parent clears state)
+                    if (props.reflectionSessionId) {
+                        console.log(`🎓 Stopping active reflection session during reset: ${props.reflectionSessionId}`)
+                        props.socket.emit('toggle_reflection', {
+                            room: props.roomId,
+                            action: 'stop'
+                        })
+                    }
+                    // Always emit reflection ended to ensure parent clears reflection state
+                    emit('reflection-session-ended')
+                    console.log('🎓 Emitted reflection-session-ended to parent during reset')
+                    
+                    // 3. Clear all chat messages and reset session state
                     messages.value = []
                     currentAutoTranscript.value = ''
                     speechQueue.value = []
                     isSpeaking.value = false
                     sessionStarted.value = false
                     
-                    // 3. Show success popup
+                    // 4. Show success popup
                     showSuccessPopup.value = true
                     setTimeout(() => {
                         showSuccessPopup.value = false
                     }, 3000)
                     
-                    console.log('✅ Session reset completed - messages cleared and session stopped')
+                    console.log('✅ Session reset completed - messages cleared, session stopped, and reflection ended')
                     
                 } else {
                     console.error('❌ Failed to reset session:', result)

@@ -660,6 +660,16 @@ def reset_ai_state():
         # Reset the AI agent state
         ai_agent.reset_room_state(room_id)
         
+        # Also end any active reflection sessions for this room
+        from services.reflection_service import get_reflection_service
+        reflection_service = get_reflection_service()
+        if reflection_service:
+            success = reflection_service.end_reflection_session_by_room(room_id)
+            if success:
+                print(f"✅ Ended active reflection session for room {room_id} during reset")
+            else:
+                print(f"ℹ️ No active reflection session found for room {room_id}")
+        
         # Get state summary after reset
         state_after = ai_agent.get_room_state_summary(room_id)
         
@@ -667,7 +677,7 @@ def reset_ai_state():
         socketio.emit('session_state_changed', {
             'action': 'session_reset',
             'room': room_id,
-            'message': 'Session reset'
+            'message': 'Session and reflection reset'
         }, room=room_id, namespace='/ws')
         
         return jsonify({
@@ -809,7 +819,7 @@ def start_session():
         
         print(f"🚀 Starting session for room {room_id}")
         
-        # Send CodeBot greeting for session start
+        # Send Bob greeting for session start
         ai_agent.send_session_start_greeting(room_id)
         
         # Broadcast session started to all users in the room

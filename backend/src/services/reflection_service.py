@@ -335,7 +335,7 @@ Ask ONE short question about what they learned or their approach. Use [HIGHLIGHT
             print(f"🎓 Calling OpenAI TTS API...")
             response = self.client.audio.speech.create(
                 model="tts-1",
-                voice="nova",  # Same voice as regular AI agent
+                voice="echo",  # Same voice as regular AI agent
                 input=message,
                 response_format="mp3",
                 speed=1.0

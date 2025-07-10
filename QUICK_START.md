@@ -43,18 +43,18 @@ npm run dev
 1. **Access the app**: Open http://localhost:5173
 2. **Login**: Use any username and password "password"
 3. **Join a room**: Enter a room number
-4. **Start coding**: The AI agent "CodeBot" will automatically join
+4. **Start coding**: The AI agent "Bob" will automatically join
 5. **Get help**: Ask programming questions or mention errors/bugs
 
 ## 🤖 AI Agent Features
 
-### What CodeBot Can Do
+### What Bob Can Do
 - **Answer Programming Questions**: Ask about syntax, best practices, algorithms
 - **Debug Code Issues**: Mention errors or bugs to get help
 - **Suggest Improvements**: Get recommendations for better code
 - **Provide Context-Aware Help**: AI sees both chat and current code
 
-### How to Trigger CodeBot
+### How to Trigger Bob
 - Ask questions with "?" 
 - Mention keywords like: error, bug, help, debug, question
 - Discuss programming concepts: function, loop, variable, etc.
@@ -63,10 +63,10 @@ npm run dev
 ### Example Interactions
 
 **You**: "I'm getting a syntax error in line 5"
-**CodeBot**: "🤖 I can see your code. The syntax error is likely a missing closing parenthesis. Try adding ')' after the print statement on line 5."
+**Bob**: "🤖 I can see your code. The syntax error is likely a missing closing parenthesis. Try adding ')' after the print statement on line 5."
 
 **You**: "What's the best way to handle exceptions in Python?"
-**CodeBot**: "🤖 For robust exception handling in Python, use try-except blocks with specific exception types. Here's a pattern: `try: risky_operation() except SpecificError as e: handle_error(e)`"
+**Bob**: "🤖 For robust exception handling in Python, use try-except blocks with specific exception types. Here's a pattern: `try: risky_operation() except SpecificError as e: handle_error(e)`"
 
 ## 🎯 Key Features
 
@@ -77,7 +77,7 @@ npm run dev
 - **Natural Language**: Responds conversationally as a team member
 
 ### Visual Integration
-- **AI Status Indicator**: Shows when CodeBot is active
+- **AI Status Indicator**: Shows when Bob is active
 - **Special Message Styling**: AI messages are clearly distinguished
 - **🤖 Badge**: All AI messages show robot emoji
 - **Seamless UI**: Integrates naturally with existing chat
@@ -204,7 +204,7 @@ The AI agent learns from interactions. Provide feedback by:
 
 ## 🚀 Ready to Code!
 
-Your AI-powered pair programming environment is now ready! CodeBot will assist you and your teammates with:
+Your AI-powered pair programming environment is now ready! Bob will assist you and your teammates with:
 
 - ✅ Real-time programming help
 - ✅ Code debugging assistance  

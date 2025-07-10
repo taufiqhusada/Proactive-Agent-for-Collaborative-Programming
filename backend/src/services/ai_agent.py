@@ -62,7 +62,7 @@ class AIAgent:
             try:
                 self.client = OpenAI(api_key=api_key)
                 self.async_client = AsyncOpenAI(api_key=api_key)  # For streaming TTS
-                print("✅ AI Agent (CodeBot) initialized successfully!")
+                print("✅ AI Agent (Bob) initialized successfully!")
             except Exception as e:
                 print(f"❌ Error initializing OpenAI client: {e}")
                 print("   AI agent will be disabled.")
@@ -78,12 +78,12 @@ class AIAgent:
         self.max_context_messages = 10  # Keep last 10 messages for context
         
         # AI Agent identity and voice configuration
-        self.agent_name = "CodeBot"
-        self.agent_id = "ai_agent_codebot"
+        self.agent_name = "Bob"
+        self.agent_id = "ai_agent_bob"
         self.voice_config = {
             "model": "tts-1",            # Use OpenAI's fast TTS model (tts-1 or tts-1-hd)
-            "voice": "nova",             # Available: alloy, echo, fable, onyx, nova, shimmer
-            "speed": 1.0                 # 0.25 to 4.0
+            "voice": "echo",             # Available: alloy, echo, fable, onyx, nova, shimmer
+            "speed": 1.1                 # 0.25 to 4.0
         }
         
         # Simple timer tracking (much more efficient)
@@ -586,16 +586,16 @@ class AIAgent:
         """AI agent joins a room (but doesn't send greeting until session starts)"""
         # Only initialize if OpenAI client is available
         if not self.client:
-            print(f"⚠️  CodeBot cannot join room {room_id}: OpenAI client not initialized")
+            print(f"⚠️  Bob cannot join room {room_id}: OpenAI client not initialized")
             return
             
-        print(f"🤖 CodeBot joined room {room_id} and is ready for session start")
+        print(f"🤖 Bob joined room {room_id} and is ready for session start")
         # Note: Greeting will be sent when session is explicitly started, not on room join
     
     def send_session_start_greeting(self, room_id: str):
         """Send greeting when session is actually started"""
         if not self.client:
-            print(f"⚠️  CodeBot cannot send greeting for room {room_id}: OpenAI client not initialized")
+            print(f"⚠️  Bob cannot send greeting for room {room_id}: OpenAI client not initialized")
             return
             
         # Send a greeting message when session starts
@@ -654,7 +654,7 @@ class AIAgent:
         
         # Adjust prompt based on whether this is a direct mention
         if is_direct_mention:
-            prompt = f"""You are CodeBot, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
+            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
 
                             Problem Context:
                             - Problem: {context.problem_title or "General coding"}
@@ -690,7 +690,7 @@ class AIAgent:
 
                             Your response:"""
         else:
-            prompt = f"""You are CodeBot, an AI pair programming assistant focused on LEARNING. Should you help in this conversation?
+            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. Should you help in this conversation?
 
                         Problem Context:
                         - Problem: {context.problem_title or "General coding"}
@@ -730,7 +730,7 @@ class AIAgent:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are CodeBot, a helpful pair programming assistant. Only intervene when truly helpful."},
+                    {"role": "system", "content": "You are Bob, a helpful pair programming assistant. Only intervene when truly helpful."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=150 if is_direct_mention else 100,  # Allow longer responses for direct mentions
@@ -766,7 +766,7 @@ class AIAgent:
         
         # Single-word AI mention keywords
         ai_keywords = {
-            '@ai', '@codebot', 'codebot', 'bob'
+            '@ai', '@bob', 'bob', 'hey bob'
         }
         
         # Check if any word is an AI keyword
@@ -1708,7 +1708,7 @@ Response:"""
                 conversation += f"{msg.username}: {msg.content}\n"
             
             # Single LLM call to decide if planning intervention is needed
-            prompt = f"""You are CodeBot, an AI pair programming assistant. A user just started writing code.
+            prompt = f"""You are Bob, an AI pair programming assistant. A user just started writing code.
 
 Problem Context: {context.problem_description or context.problem_title or "General coding task"}
 
