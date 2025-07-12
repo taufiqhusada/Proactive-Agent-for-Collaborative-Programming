@@ -81,7 +81,7 @@
                     <div class="message-header">
                         <span class="username">
                             <span v-if="message.isAI && message.isExecutionHelp" class="ai-badge">🔍</span>
-                            <span v-else-if="message.isAI" class="ai-badge">🤖</span>
+                            <span v-else-if="message.isAI" class="ai-badge">👨‍💻</span>
                             {{ message.username }}
                         </span>
                         <span class="timestamp">{{ formatTime(message.timestamp) }}</span>

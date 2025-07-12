@@ -2,8 +2,12 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <h2 class="login-title">🤝 Collaborative Code Editor</h2>
+        <h2 class="login-title">
+          🤝 Code and Learn 
+          <span class="highlight-together">Together</span>
+        </h2>
         <p class="login-subtitle">Join a coding session with your teammate</p>
+        <p class="powered-by">Powered by human-human-AI</p>
       </div>
       
       <form @submit.prevent="submit" class="login-form">
@@ -143,10 +147,23 @@ async function submit() {
   margin: 0 0 0.5rem 0;
 }
 
+.highlight-together {
+  color: #667eea;
+  font-weight: 600;
+}
+
 .login-subtitle {
   color: #718096;
   font-size: 0.95rem;
+  margin: 0 0 0.25rem 0;
+}
+
+.powered-by {
+  color: #4a5568;
+  font-size: 0.75rem;
   margin: 0;
+  font-style: italic;
+  letter-spacing: 0.5px;
 }
 
 .login-form {

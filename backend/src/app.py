@@ -67,7 +67,7 @@ ai_agent = init_ai_agent(socketio)
 scaffolding_service = ScaffoldingService()
 
 # Initialize Reflection Service
-from services.reflection_service import init_reflection_service
+from services.ai_reflection import init_reflection_service
 reflection_service = init_reflection_service(socketio)
 
 # Track active scaffolding requests to prevent duplicates
@@ -350,7 +350,7 @@ def ws_toggle_reflection(data):
         print(f"🎓 Reflection toggle request: {action} for room {room}")
         
         # Import reflection service
-        from services.reflection_service import get_reflection_service
+        from services.ai_reflection import get_reflection_service
         reflection_service = get_reflection_service()
         
         if not reflection_service:
@@ -661,7 +661,7 @@ def reset_ai_state():
         ai_agent.reset_room_state(room_id)
         
         # Also end any active reflection sessions for this room
-        from services.reflection_service import get_reflection_service
+        from services.ai_reflection import get_reflection_service
         reflection_service = get_reflection_service()
         if reflection_service:
             success = reflection_service.end_reflection_session_by_room(room_id)

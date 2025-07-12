@@ -2,7 +2,11 @@
     <div class="editor-container">
         <div class="editor-header">
             <div class="header-content">
-                <h1 class="room-title">Collaborative Code Editor</h1>
+                <h1 class="room-title">
+                  Code and Learn 
+                  <span class="highlight-together">Together</span>
+                </h1>
+                <p class="powered-by">Powered by human-human-AI</p>
                 <!-- <p class="room-id">Room: {{ roomId }}</p> -->
             </div>
             <div class="controls">
@@ -1970,6 +1974,26 @@ export default defineComponent({
     font-size: 1.25rem;
     font-weight: 600;
     color: #2d3748;
+}
+
+.room-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.highlight-together {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.powered-by {
+    color: #4a5568;
+    font-size: 0.65rem;
+    margin: 0.15rem 0 0 0;
+    font-style: italic;
+    letter-spacing: 0.5px;
 }
 
 .room-id {
