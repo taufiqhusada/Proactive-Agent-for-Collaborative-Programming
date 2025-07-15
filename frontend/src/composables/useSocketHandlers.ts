@@ -1,0 +1,195 @@
+import { ref, watch } from 'vue'
+import { debounce } from 'lodash'
+
+export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any, selectedLanguage: any, currentUserId: any, view: any, lastReceivedContent: any, isLocalUpdate: any, isReadOnly: any, setRemoteCursor: any, clearRemoteCursor: any, generateUserColor: any) {
+  
+  const handleRemoteCodeExecution = (data: any) => {
+    console.log('📡 Handling remote code execution:', data)
+    
+    // Show a toast notification
+    showExecutionNotification(data)
+  }
+
+  const showExecutionNotification = (data) => {
+    // Create a temporary notification
+    const notification = {
+      id: 'exec_notif_' + Date.now(),
+      type: 'execution',
+      message: `Code executed by another user`,
+      details: {
+        language: data.language,
+        hasOutput: !!(data.result.output),
+        hasError: !!(data.result.error),
+        executionTime: data.result.executionTime || 'unknown'
+      },
+      timestamp: Date.now()
+    }
+
+    // You can add this to a notifications array if you have one
+    // For now, just log it
+    console.log('📊 Execution notification:', notification)
+  }
+
+  const debouncedBroadcast = debounce((newValue) => {
+    if (!isReadOnly.value) {
+      socket.emit('update', { 
+        room: roomId, 
+        delta: newValue,
+        sourceId: socket.id 
+      })
+    }
+  }, 200)
+
+  watch(() => code.value, (newValue) => {
+    if (!isLocalUpdate.value && !isReadOnly.value) {
+      debouncedBroadcast(newValue)
+    }
+    isLocalUpdate.value = false
+  })
+
+  // Handle remote selection updates
+  const handleRemoteSelection = (data) => {
+    console.log('handleRemoteSelection called with:', data)
+    if (data.userId !== socket.id && view.value) {
+      console.log('Processing remote selection from different user')
+      try {
+        if (data.from !== data.to && 
+            typeof data.from === 'number' && 
+            typeof data.to === 'number' && 
+            data.from >= 0 && 
+            data.to >= 0) {
+          
+          console.log('Adding remote selection decoration from', data.from, 'to', data.to)
+          const userColor = data.classIndex !== undefined ? 
+            { classIndex: data.classIndex } : 
+            generateUserColor(data.userId, true) // true = remote, it's other
+          
+          view.value.dispatch({
+            effects: [setRemoteCursor.of({
+              userId: data.userId,
+              from: data.from,
+              to: data.to,
+              color: data.color || generateUserColor(data.userId, true).color, // true = remote
+              classIndex: userColor.classIndex
+            })]
+          })
+        } else {
+          console.log('Clearing remote selection (no valid selection)')
+          view.value.dispatch({
+            effects: [clearRemoteCursor.of(data.userId)]
+          })
+        }
+      } catch (error) {
+        console.error('Error handling remote selection:', error)
+      }
+    } else {
+      console.log('Ignoring selection from same user or no view')
+    }
+  }
+
+  // Handle remote cursor updates with additional state tracking
+  let lastCursorData = new Map() // Track last cursor data per user
+  
+  const handleRemoteCursor = (data) => {
+    console.log('Received cursor update:', data)
+    if (data.userId !== socket.id && view.value) {
+      try {
+        // Check if this is actually a different position to avoid unnecessary updates
+        const lastData = lastCursorData.get(data.userId)
+        if (lastData && lastData.from === data.from && lastData.to === data.to) {
+          console.log('Ignoring duplicate cursor update for user', data.userId)
+          return
+        }
+        
+        lastCursorData.set(data.userId, { from: data.from, to: data.to })
+        
+        // Use a small delay to ensure proper sequencing
+        setTimeout(() => {
+          if (view.value) {
+            view.value.dispatch({
+              effects: [setRemoteCursor.of({
+                userId: data.userId,
+                from: data.from,
+                to: data.to
+              })]
+            })
+          }
+        }, 10)
+      } catch (error) {
+        console.error('Error handling remote cursor:', error)
+      }
+    }
+  }
+
+  const setupSocketHandlers = () => {
+    // Wait for connection before joining room
+    socket.on('connect', () => {
+      // Update current user ID when socket connects
+      currentUserId.value = socket.id
+      console.log('Socket connected with ID:', socket.id)
+      
+      socket.emit('join', { 
+        room: roomId, 
+        username: auth?.user || 'Guest' 
+      }, (response) => {
+        if (response && response.code) {
+          lastReceivedContent.value = response.code
+          isLocalUpdate.value = true
+          code.value = response.code
+        }
+      })
+    })
+
+    socket.on('update', ({ delta, sourceId }) => {
+      if (sourceId !== socket.id) {
+        lastReceivedContent.value = delta
+        isLocalUpdate.value = true
+        code.value = delta
+      }
+    })
+
+    socket.on('cursor', (data) => {
+      handleRemoteCursor(data)
+    })
+
+    socket.on('selection', (data) => {
+      handleRemoteSelection(data)
+    })
+    
+    socket.on('user_disconnected', (data) => {
+      if (view.value) {
+        view.value.dispatch({
+          effects: [clearRemoteCursor.of(data.userId)]
+        })
+      }
+    })
+
+    socket.on('code_execution_result', (data) => {
+      console.log('📡 Received code execution from another user:', data)
+      handleRemoteCodeExecution(data)
+    })
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error)
+    })
+  }
+
+  const cleanupSocketHandlers = () => {
+    socket.off('connect')
+    socket.off('update')
+    socket.off('cursor')
+    socket.off('selection')
+    socket.off('user_disconnected')
+    socket.off('code_execution_result')
+    socket.off('connect_error')
+    socket.emit('leave', { room: roomId })
+  }
+
+  return {
+    setupSocketHandlers,
+    cleanupSocketHandlers,
+    handleRemoteSelection,
+    handleRemoteCursor,
+    handleRemoteCodeExecution
+  }
+}
