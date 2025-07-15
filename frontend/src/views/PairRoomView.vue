@@ -32,7 +32,11 @@
         <div class="main-content">
             <!-- Left Panel: Problem Description -->
             <div class="left-panel">
-                <ProblemDescription @problem-changed="onProblemChanged" />
+                <ProblemDescription 
+                    :selected-problem="selectedProblem" 
+                    @problem-changed="onProblemChanged" 
+                    @boilerplate-changed="onBoilerplateChanged" 
+                />
             </div>
 
             <!-- Center Panel: Code Editor -->
@@ -148,6 +152,7 @@ export default defineComponent({
         const isLocalUpdate = ref(false)
         const currentUserId = ref('')
         const currentProblem = ref(null)
+        const selectedProblem = ref(0)
         const { socket, connect } = useSocket()
         
         // Code analysis state
@@ -532,6 +537,12 @@ export default defineComponent({
             sendProblemToBackend(data.problem)
             
             // You can sync the problem selection across users if needed
+        }
+
+        const onBoilerplateChanged = (boilerplate) => {
+            if (boilerplate) {
+                code.value = boilerplate;
+            }
         }
 
         // Simple Reflection session functions
@@ -1310,7 +1321,11 @@ export default defineComponent({
             showCodeAnalysis.value = true
             console.log('✅ Code analysis panel should be visible now')
         }
-        
+        watch(selectedProblem, (newIndex) => {
+            if (problemBoilerplates && problemBoilerplates[newIndex]) {
+                code.value = problemBoilerplates[newIndex];
+            }
+        });
         const onHighlightLine = (lineNumber) => {
             // Highlight the problematic line in the editor
             if (view.value) {
@@ -1908,12 +1923,14 @@ export default defineComponent({
             roomId,
             currentUserId,
             currentProblem,
+            selectedProblem,
             computedExtensions,
             socket,
             handleReady,
             handleCodeChange,
             updateLanguage,
             onProblemChanged,
+            onBoilerplateChanged,
             auth,
             // Code analysis
             showCodeAnalysis,
@@ -2104,11 +2121,12 @@ input:checked + .slider:before {
 
 .editor-wrapper {
     flex: 1;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-    background: white;
-    border: 1px solid #e2e8f0;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .main-content {
@@ -2120,7 +2138,7 @@ input:checked + .slider:before {
 }
 
 .left-panel {
-    width: 350px;
+    width: 400px;
     flex-shrink: 0;
 }
 
@@ -2128,11 +2146,13 @@ input:checked + .slider:before {
     flex: 1;
     display: flex;
     flex-direction: column;
+    height: 85vh;
+    min-height: 0;
     min-width: 0;
 }
 
 .right-panel {
-    width: 500px;
+    width: 450px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -2145,7 +2165,7 @@ input:checked + .slider:before {
     line-height: 1.5;
 }
 
-/* Remote selection styling - simplified for pair programming */
+/* Remote selection styling - simplified for */
 [class*="remote-selection-"] {
     border-radius: 3px;
     border: 1px solid rgba(0, 0, 0, 0.2);

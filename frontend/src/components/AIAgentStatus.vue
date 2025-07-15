@@ -32,7 +32,7 @@
                 <p class="ai-desc-text">
                     {{ reflectionActive 
                         ? 'Bob is guiding your learning reflection. You can exit anytime!' 
-                        : 'Hi, I am Bob, your proactive AI teammate. I am listening and can jump in to help!' }}
+                        : 'Hi, I\'m Bob, your proactive AI teammate. I\'m listening and can jump in to help!' }}
                 </p>
             </div>
     </div>

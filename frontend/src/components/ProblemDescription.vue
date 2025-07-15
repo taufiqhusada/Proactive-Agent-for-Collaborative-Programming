@@ -26,7 +26,7 @@
             <div v-if="currentProblem.examples && currentProblem.examples.length > 0" class="examples-section">
                 <h6>Examples:</h6>
                 <div v-for="(example, index) in currentProblem.examples" :key="index" class="example">
-                    <div class="example-header">Example {{ index + 1 }}:</div>
+                    <div class="example-header">Subtask {{ index + 1 }}:</div>
                     <div class="example-content">
                         <div class="example-input">
                             <strong>Input:</strong> <code>{{ example.input }}</code>
@@ -54,13 +54,19 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed, onMounted } from 'vue'
+import { defineComponent, ref, computed, onMounted, watch } from 'vue'
 
 export default defineComponent({
     name: 'ProblemDescription',
-    emits: ['problem-changed'],
-    setup(_, { emit }) {
-        const selectedProblem = ref(0)
+    emits: ['problem-changed', 'boilerplate-changed'],
+    props: {
+        selectedProblem: {
+            type: Number,
+            default: 0
+        }
+    },
+    setup(props, { emit }) {
+        const selectedProblem = ref(props.selectedProblem)
 
         const problems = ref([
             {
@@ -95,99 +101,166 @@ export default defineComponent({
                     "Only one valid answer exists."
                 ]
             },
+            // {
+            //     title: "Add Two Numbers",
+            //     difficulty: "Medium",
+            //     description: `
+            //         <p>You are given two <strong>non-empty</strong> linked lists representing two non-negative integers. The digits are stored in <strong>reverse order</strong>, and each of their nodes contains a single digit. Add the two numbers and return the sum as a linked list.</p>
+            //         <p>You may assume the two numbers do not contain any leading zero, except the number 0 itself.</p>
+            //     `,
+            //     examples: [
+            //         {
+            //             input: "l1 = [2,4,3], l2 = [5,6,4]",
+            //             output: "[7,0,8]",
+            //             explanation: "342 + 465 = 807."
+            //         },
+            //         {
+            //             input: "l1 = [0], l2 = [0]",
+            //             output: "[0]",
+            //             explanation: ""
+            //         },
+            //         {
+            //             input: "l1 = [9,9,9,9,9,9,9], l2 = [9,9,9,9]",
+            //             output: "[8,9,9,9,0,0,0,1]",
+            //             explanation: ""
+            //         }
+            //     ],
+            //     constraints: [
+            //         "The number of nodes in each linked list is in the range [1, 100].",
+            //         "0 ≤ Node.val ≤ 9",
+            //         "It is guaranteed that the list represents a number that does not have leading zeros."
+            //     ]
+            // },
+            // {
+            //     title: "Longest Substring Without Repeating Characters",
+            //     difficulty: "Medium",
+            //     description: `
+            //         <p>Given a string <code>s</code>, find the length of the <strong>longest substring</strong> without repeating characters.</p>
+            //     `,
+            //     examples: [
+            //         {
+            //             input: 's = "abcabcbb"',
+            //             output: "3",
+            //             explanation: 'The answer is "abc", with the length of 3.'
+            //         },
+            //         {
+            //             input: 's = "bbbbb"',
+            //             output: "1",
+            //             explanation: 'The answer is "b", with the length of 1.'
+            //         },
+            //         {
+            //             input: 's = "pwwkew"',
+            //             output: "3",
+            //             explanation: 'The answer is "wke", with the length of 3.'
+            //         }
+            //     ],
+            //     constraints: [
+            //         "0 ≤ s.length ≤ 5 × 10⁴",
+            //         "s consists of English letters, digits, symbols and spaces."
+            //     ]
+            // },
+            // {
+            //     title: "Valid Parentheses",
+            //     difficulty: "Easy",
+            //     description: `
+            //         <p>Given a string <code>s</code> containing just the characters <code>'('</code>, <code>')'</code>, <code>'{'</code>, <code>'}'</code>, <code>'['</code> and <code>']'</code>, determine if the input string is valid.</p>
+            //         <p>An input string is valid if:</p>
+            //         <ol>
+            //             <li>Open brackets must be closed by the same type of brackets.</li>
+            //             <li>Open brackets must be closed in the correct order.</li>
+            //             <li>Every close bracket has a corresponding open bracket of the same type.</li>
+            //         </ol>
+            //     `,
+            //     examples: [
+            //         {
+            //             input: 's = "()"',
+            //             output: "true",
+            //             explanation: ""
+            //         },
+            //         {
+            //             input: 's = "()[]{}"',
+            //             output: "true",
+            //             explanation: ""
+            //         },
+            //         {
+            //             input: 's = "(]"',
+            //             output: "false",
+            //             explanation: ""
+            //         }
+            //     ],
+            //     constraints: [
+            //         "1 ≤ s.length ≤ 10⁴",
+            //         "s consists of parentheses only '()[]{}'."
+            //     ]
+            // },
             {
-                title: "Add Two Numbers",
-                difficulty: "Medium",
-                description: `
-                    <p>You are given two <strong>non-empty</strong> linked lists representing two non-negative integers. The digits are stored in <strong>reverse order</strong>, and each of their nodes contains a single digit. Add the two numbers and return the sum as a linked list.</p>
-                    <p>You may assume the two numbers do not contain any leading zero, except the number 0 itself.</p>
-                `,
-                examples: [
-                    {
-                        input: "l1 = [2,4,3], l2 = [5,6,4]",
-                        output: "[7,0,8]",
-                        explanation: "342 + 465 = 807."
-                    },
-                    {
-                        input: "l1 = [0], l2 = [0]",
-                        output: "[0]",
-                        explanation: ""
-                    },
-                    {
-                        input: "l1 = [9,9,9,9,9,9,9], l2 = [9,9,9,9]",
-                        output: "[8,9,9,9,0,0,0,1]",
-                        explanation: ""
-                    }
-                ],
-                constraints: [
-                    "The number of nodes in each linked list is in the range [1, 100].",
-                    "0 ≤ Node.val ≤ 9",
-                    "It is guaranteed that the list represents a number that does not have leading zeros."
-                ]
-            },
-            {
-                title: "Longest Substring Without Repeating Characters",
-                difficulty: "Medium",
-                description: `
-                    <p>Given a string <code>s</code>, find the length of the <strong>longest substring</strong> without repeating characters.</p>
-                `,
-                examples: [
-                    {
-                        input: 's = "abcabcbb"',
-                        output: "3",
-                        explanation: 'The answer is "abc", with the length of 3.'
-                    },
-                    {
-                        input: 's = "bbbbb"',
-                        output: "1",
-                        explanation: 'The answer is "b", with the length of 1.'
-                    },
-                    {
-                        input: 's = "pwwkew"',
-                        output: "3",
-                        explanation: 'The answer is "wke", with the length of 3.'
-                    }
-                ],
-                constraints: [
-                    "0 ≤ s.length ≤ 5 × 10⁴",
-                    "s consists of English letters, digits, symbols and spaces."
-                ]
-            },
-            {
-                title: "Valid Parentheses",
+                title: "Gift Card Purchase Assistant",
                 difficulty: "Easy",
                 description: `
-                    <p>Given a string <code>s</code> containing just the characters <code>'('</code>, <code>')'</code>, <code>'{'</code>, <code>'}'</code>, <code>'['</code> and <code>']'</code>, determine if the input string is valid.</p>
-                    <p>An input string is valid if:</p>
-                    <ol>
-                        <li>Open brackets must be closed by the same type of brackets.</li>
-                        <li>Open brackets must be closed in the correct order.</li>
-                        <li>Every close bracket has a corresponding open bracket of the same type.</li>
-                    </ol>
+                    <p><strong>Scenario:</strong> A user has a gift card with a fixed value (e.g., $100) and wants to buy two items from their shopping cart whose prices add up exactly to the gift card value.</p>
+                    <p>Implement a Gift Card Purchase Assistant that helps the user make the best use of their gift card.</p>
+                    <ul>
+                        <li><strong>Subtask 1:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li>
+                        <li><strong>Subtask 2:</strong> Find the pair (by indices) that includes the highest-priced item possible. </li>
+                        <li><strong>Subtask 3:</strong> Given the user wants to buy one item, suggest which other item they should buy (by index) to use the gift card exactly.</li>
+                    </ul>
                 `,
                 examples: [
                     {
-                        input: 's = "()"',
-                        output: "true",
-                        explanation: ""
+                        input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
+                        output: "[[0,1],[2,3]]",
+                        explanation: "Items at indices [0,1] and [2,3] both sum to 100."
                     },
                     {
-                        input: 's = "()[]{}"',
-                        output: "true",
-                        explanation: ""
+                        input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
+                        output: "[2,3]",
+                        explanation: "[2,3] is chosen because it includes 80, the highest single item in any valid pair summing to 100. No pair can be form with 90, so we chose to include 80 instead."
                     },
                     {
-                        input: 's = "(]"',
-                        output: "false",
-                        explanation: ""
+                        input: "prices =  [40, 60, 20, 80, 90], gift_card = 100, chosen_index = 2",
+                        output: "0",
+                        explanation: "If user chooses item at index 1 (price 60), suggest index 0 (price 40) to use the gift card."
                     }
                 ],
                 constraints: [
-                    "1 ≤ s.length ≤ 10⁴",
-                    "s consists of parentheses only '()[]{}'."
+                    "2 ≤ prices.length ≤ 10⁴",
+                    "1 ≤ prices[i] ≤ 10⁴",
+                    "All prices are positive integers.",
                 ]
             }
         ])
+
+        // Boilerplate code for Gift Card Purchase Assistant (Python)
+        const giftCardBoilerplate = `# Gift Card Purchase Assistant
+
+prices = [40, 60, 20, 80, 90]
+gift_card = 100
+
+def find_all_pairs(prices, gift_card):
+
+  return []
+
+def find_highest_pair(prices, gift_card):
+    
+  return []
+
+def suggest_pair(prices, gift_card, chosen_index):
+
+  return None
+
+# Example usage:
+print(find_all_pairs(prices, gift_card))
+print(find_highest_pair(prices, gift_card))
+print(suggest_pair(prices, gift_card, 1))
+                `;
+
+        const problemBoilerplates = [
+            null, // Two Sum
+            // null, // Add Two Numbers
+            // null, // Longest Substring Without Repeating Characters
+            // null, // Valid Parentheses
+            giftCardBoilerplate // Gift Card Purchase Assistant
+        ];
 
         const currentProblem = computed(() => problems.value[selectedProblem.value])
 
@@ -202,6 +275,20 @@ export default defineComponent({
         onMounted(() => {
             onProblemChange()
         })
+
+        watch(() => props.selectedProblem, (newVal) => {
+            selectedProblem.value = newVal
+        })
+
+        watch(selectedProblem, (newIndex) => {
+            if (problemBoilerplates[newIndex]) {
+                emit('boilerplate-changed', problemBoilerplates[newIndex]);
+            }
+            emit('problem-changed', {
+                problemIndex: newIndex,
+                problem: problems.value[newIndex]
+            })
+        });
 
         return {
             selectedProblem,
