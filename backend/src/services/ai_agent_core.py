@@ -114,14 +114,15 @@ class AIAgent:
             prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
 
                             Problem Context:
-                            - Problem: {context.problem_title or "General coding"}
+                            - Problem title: {context.problem_title or "General coding"}
+                            - Problem description: {context.problem_description or "No specific problem"}
                             - Language: {context.programming_language}
 
                             Recent Conversation:
                             {recent_conversation}
 
                             Code Context:
-                            {context.code_context[:300] if context.code_context else "No code visible"}
+                            {context.code_context if context.code_context else "No code visible"}
                             
                             {execution_context}
 
@@ -143,14 +144,15 @@ class AIAgent:
             prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. Should you help in this conversation?
 
                         Problem Context:
-                        - Problem: {context.problem_title or "General coding"}
+                        - Problem title: {context.problem_title or "General coding"}
+                        - Problem description: {context.problem_description or "No specific problem"}
                         - Language: {context.programming_language}
 
                         Recent Conversation:
                         {recent_conversation}
 
                         Code Context:
-                        {context.code_context[:300] if context.code_context else "No code visible"}
+                        {context.code_context if context.code_context else "No code visible"}
                         
                         {execution_context}
 
@@ -168,6 +170,9 @@ class AIAgent:
                         IMPORTANT: Mix response types. Don't always ask questions - sometimes just give helpful tips!
 
                         Your response:"""
+            
+
+        print("🔍 AI Decision prompt:", prompt, "...")  # Log first 200 chars for debugging
 
         try:
             response = self.client.chat.completions.create(

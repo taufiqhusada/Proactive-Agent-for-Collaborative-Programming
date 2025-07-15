@@ -173,7 +173,7 @@ class AICodeAnalysisService:
                 "issue": {{
                     "title": "Brief title covering main problem(s)",
                     "description": "Concise explanation of what's wrong (1-2 sentences)",
-                    "hint": "Quick practical solution (1 sentence)"
+                    "hint": "Quick practical solution (1-2 sentences)"
                 }}
                 }}
 
@@ -256,27 +256,30 @@ class AICodeAnalysisService:
                     Error: {error[:300] if error else 'No error'}
 
                     Instructions:
-                    - If syntax/runtime errors: suggest the fix
-                    - If wrong output: flag it
-                    - If code works but has these patterns, suggest optimization:
+                    - If syntax/runtime errors: suggest the fix:
+                    * "Fix: [issue]"
+                    - If code runs but gives incorrect output (i.e., doesn’t meet requirements):
+                    * "Output: [why the output is incorrect, and what it should be]"
+                    - If code works but can be optimize, suggest optimization, for example :
                     * Nested loops for searching/finding pairs → "Optimize: Use hash map"
                     * Linear search in loops → "Optimize: Use hash map/set"
                     * O(n²) when O(n) possible → "Optimize: Better algorithm"
                     - Only return "correct" if code is both working AND reasonably efficient
 
-                    Provide analysis (max 45 characters):
+                    Provide analysis (max 150 characters):
                     - Error: "Fix: [issue]"
                     - Wrong output: "Output: [issue]" 
                     - Inefficient: "Optimize: [suggestion]"
                     - Good code: "correct"
 
-                    Examples: "Fix: Missing )", "Optimize: Use hash map", "correct"
+                    Examples: "Fix: Missing )", "output does not match the requirement, fix: ...", "Optimize: Use hash map", "correct"
                     """
+            print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = await self.async_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=15,
+                max_tokens=50,
                 temperature=0.3
             )
             
@@ -301,7 +304,7 @@ class AICodeAnalysisService:
                 analysis_type = "error" if has_error else "warning"
             
             return {
-                "message": analysis[:50],  # Match the prompt limit
+                "message": analysis,  # Match the prompt limit
                 "type": analysis_type,
             }
             
