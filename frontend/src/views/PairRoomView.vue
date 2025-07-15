@@ -1128,8 +1128,8 @@ export default defineComponent({
             console.log('📋 Lines:', lines.length, 'Characters:', chars)
             
             // Relaxed size check for educational coding - either condition is enough
-            if (lines.length < 3 && chars < 50) {
-                console.log('❌ Failed size check: lines < 3 AND chars < 50')
+            if (lines.length < 5 && chars < 100) {
+                console.log('❌ Failed size check: lines < 5 AND chars < 100')
                 return false
             }
             
