@@ -615,11 +615,13 @@ def analyze_code_block():
         language = data.get('language', 'python')
         context = data.get('context', {})
         problem_context = data.get('problemContext', None)
+        room_id = data.get('roomId', None)  # Get room ID for socket broadcasting
 
         print(f"📊 Code Analysis Request:")
         print(f"  Code: {code[:100]}...")
         print(f"  Language: {language}")
         print(f"  Context: {context}")
+        print(f"  Room ID: {room_id}")
         # print(f"  Problem Context: {problem_context}")
         
         if not code.strip():
@@ -636,6 +638,38 @@ def analyze_code_block():
         }
 
         print("this is the result", result)
+        
+        # Always broadcast results to all users in the room (whether issues found or not)
+        if room_id:
+            print(f"📡 Broadcasting code analysis results to room {room_id}")
+            
+            # Determine the highest severity level
+            issues = result.get('issues', [])
+            highest_severity = 'medium'
+            if issues:
+                severity_priority = {'high': 3, 'medium': 2, 'low': 1}
+                highest_severity = max(issues, key=lambda x: severity_priority.get(x.get('severity', 'medium'), 0)).get('severity', 'medium')
+            
+            # Prepare code block info for frontend
+            code_block = {
+                'code': code,
+                'language': language,
+                'startLine': context.get('startLine'),
+                'endLine': context.get('endLine'),
+                'cursorLine': context.get('cursorLine')
+            }
+            
+            # Broadcast to all users in the room via socket
+            socketio.emit('code_analysis_result', {
+                'codeBlock': code_block,
+                'issues': issues,
+                'highestSeverity': highest_severity,
+                'timestamp': result.get('timestamp'),
+                'confidence': result.get('confidence')
+            }, room=room_id, namespace='/ws')
+            
+            print(f"✅ Code analysis results broadcasted to room {room_id} (issues: {len(issues)})")
+        
         return jsonify(result)
         
     except Exception as e:

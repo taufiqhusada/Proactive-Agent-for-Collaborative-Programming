@@ -78,6 +78,18 @@ export default {
     editorPosition: {
       type: Object,
       default: () => ({ top: 100, left: 0 })
+    },
+    socket: {
+      type: Object,
+      default: null
+    },
+    roomId: {
+      type: String,
+      default: ''
+    },
+    currentUserId: {
+      type: String,
+      default: ''
     }
   },    data() {
     return {
@@ -110,8 +122,8 @@ export default {
       if (!newVal) {
         this.showIssues = false;
       }
-      // If newVal is true, check if we have a code block to analyze
-      if (newVal && this.codeBlock) {
+      // Only trigger analysis for local (non-remote) code blocks
+      if (newVal && this.codeBlock && !this.codeBlock.isRemoteAnalysis) {
         console.log('🚀 Starting code analysis (visibility changed)...')
         this.analyzeCodeBlock(this.codeBlock);
       }
@@ -120,8 +132,13 @@ export default {
     codeBlock(newBlock) {
       console.log('📝 CodeIssuePanel received code block:', newBlock)
       if (newBlock && this.visible) {
-        console.log('🚀 Starting code analysis (code block changed)...')
-        this.analyzeCodeBlock(newBlock);
+        if (newBlock.isRemoteAnalysis && newBlock.issues) {
+          console.log('� Displaying remote analysis results directly')
+          this.displayIssues(newBlock.issues, newBlock);
+        } else if (!newBlock.isRemoteAnalysis) {
+          console.log('� Starting local code analysis (code block changed)...')
+          this.analyzeCodeBlock(newBlock);
+        }
       }
     }
   },
@@ -194,10 +211,11 @@ export default {
       
       this.analysisInProgress = true;
       
-      console.log('🚀 Starting API call to backend...')
+      console.log('🚀 Triggering analysis via API call...')
       
       try {
-        const response = await fetch('/api/analyze-code-block', {
+        // Fire and forget - just trigger the analysis, don't wait for response
+        fetch('/api/analyze-code-block', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -208,29 +226,24 @@ export default {
               endLine: codeBlock.endLine,
               cursorLine: codeBlock.cursorLine
             },
-            problemContext: codeBlock.problemContext || null
+            problemContext: codeBlock.problemContext || null,
+            roomId: this.roomId  // Include room ID for socket broadcasting
           })
+        }).then(response => {
+          console.log('📡 Analysis triggered, status:', response.status)
+          if (!response.ok) {
+            console.error('❌ Analysis API call failed:', response.status, response.statusText)
+          }
+        }).catch(error => {
+          console.error('� Error triggering analysis:', error);
+        }).finally(() => {
+          this.analysisInProgress = false;
         });
         
-        console.log('📡 API response status:', response.status)
+        console.log('📡 Analysis request sent, waiting for socket results...')
         
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-        
-        const analysis = await response.json();
-        console.log('📊 Analysis result:', analysis)
-        
-        if (analysis.issues && analysis.issues.length > 0) {
-          console.log('🎯 Issues found, displaying panel...')
-          this.displayIssues(analysis.issues, codeBlock);
-        } else {
-          console.log('✅ No issues found - staying hidden')
-          // Don't show anything if no issues
-        }
       } catch (error) {
-        console.error('💥 Error analyzing code block:', error);
-      } finally {
+        console.error('💥 Error triggering analysis:', error);
         this.analysisInProgress = false;
       }
     },
@@ -253,6 +266,9 @@ export default {
         issues,
         highestSeverity
       });
+      
+      // Note: Socket broadcasting is now handled directly by the backend
+      // when the API call is made, so no need to emit socket events here
       
       // Don't auto-dismiss - let user close manually
     },
@@ -347,6 +363,16 @@ export default {
   gap: 8px;
   font-weight: 600;
   color: #495057;
+}
+
+.remote-indicator {
+  font-size: 12px;
+  color: #007bff;
+  font-weight: 400;
+  background: #e7f3ff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 4px;
 }
 
 .panel-icon {

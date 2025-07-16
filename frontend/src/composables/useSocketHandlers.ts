@@ -1,13 +1,64 @@
 import { ref, watch } from 'vue'
 import { debounce } from 'lodash'
 
-export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any, selectedLanguage: any, currentUserId: any, view: any, lastReceivedContent: any, isLocalUpdate: any, isReadOnly: any, setRemoteCursor: any, clearRemoteCursor: any, generateUserColor: any) {
+export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any, selectedLanguage: any, currentUserId: any, view: any, lastReceivedContent: any, isLocalUpdate: any, isReadOnly: any, setRemoteCursor: any, clearRemoteCursor: any, generateUserColor: any, showCodeAnalysisLineIndicators: any, showCodeAnalysis: any, currentCodeBlock: any) {
   
   const handleRemoteCodeExecution = (data: any) => {
     console.log('📡 Handling remote code execution:', data)
     
     // Show a toast notification
     showExecutionNotification(data)
+  }
+
+  const handleRemoteCodeAnalysis = (data: any) => {
+    console.log('📊 Received code analysis result from backend:', data)
+    
+    if (view.value && data.codeBlock && showCodeAnalysisLineIndicators) {
+      console.log('📊 Displaying code analysis indicators for all users')
+      console.log('📊 Code block:', data.codeBlock)
+      console.log('📊 Issues found:', data.issues?.length || 0)
+      console.log('📊 Severity:', data.highestSeverity)
+      
+      try {
+        // Show visual indicators for the analyzed code block
+        if (data.codeBlock.startLine && data.codeBlock.endLine) {
+          showCodeAnalysisLineIndicators(
+            view.value, 
+            data.codeBlock.startLine, 
+            data.codeBlock.endLine, 
+            data.highestSeverity || 'medium'
+          )
+          console.log('✅ Successfully displayed code analysis indicators')
+        }
+        
+        // Set the code block data and let the CodeIssuePanel watcher handle display
+        if (currentCodeBlock) {
+          console.log('📋 Setting code analysis data for panel')
+          currentCodeBlock.value = {
+            ...data.codeBlock,
+            issues: data.issues,
+            highestSeverity: data.highestSeverity,
+            isRemoteAnalysis: true,
+            remoteUserId: data.userId
+          }
+          
+          // Only set visibility if there are issues to show
+          if (showCodeAnalysis) {
+            if (data.issues && data.issues.length > 0) {
+              console.log('📋 Showing code analysis panel - issues found')
+              showCodeAnalysis.value = true
+            } else {
+              console.log('✅ No issues found - hiding analysis panel')
+              showCodeAnalysis.value = false
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error displaying code analysis:', error)
+      }
+    } else {
+      console.log('📊 Cannot display code analysis - missing view, codeBlock, or functions')
+    }
   }
 
   const showExecutionNotification = (data) => {
@@ -169,6 +220,11 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
       handleRemoteCodeExecution(data)
     })
 
+    socket.on('code_analysis_result', (data) => {
+      console.log('📊 Received code analysis from backend:', data)
+      handleRemoteCodeAnalysis(data)
+    })
+
     socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error)
     })
@@ -181,6 +237,7 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
     socket.off('selection')
     socket.off('user_disconnected')
     socket.off('code_execution_result')
+    socket.off('code_analysis_result')
     socket.off('connect_error')
     socket.emit('leave', { room: roomId })
   }
@@ -190,6 +247,7 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
     cleanupSocketHandlers,
     handleRemoteSelection,
     handleRemoteCursor,
-    handleRemoteCodeExecution
+    handleRemoteCodeExecution,
+    handleRemoteCodeAnalysis
   }
 }

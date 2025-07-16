@@ -91,6 +91,7 @@
             :visible="showCodeAnalysis"
             :code-block="currentCodeBlock"
             :editor-position="{ top: 100, left: 0 }"
+            :room-id="roomId"
             @highlight-line="onHighlightLine"
             @apply-fix="onApplyFix"
             @explain-issue="onExplainIssue"
@@ -195,7 +196,8 @@ export default defineComponent({
             socket, roomId, auth, code, selectedLanguage, currentUserId, 
             view, lastReceivedContent, isLocalUpdate, isReadOnly,
             codeMirrorExtensions.setRemoteCursor, codeMirrorExtensions.clearRemoteCursor, 
-            codeMirrorExtensions.generateUserColor
+            codeMirrorExtensions.generateUserColor, codeMirrorExtensions.showCodeAnalysisLineIndicators,
+            codeAnalysis.showCodeAnalysis, codeAnalysis.currentCodeBlock
         )
 
         const updateLanguage = () => {
