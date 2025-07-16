@@ -6,7 +6,7 @@
                   Code and Learn 
                   <span class="highlight-together">Together</span>
                 </h1>
-                <p class="powered-by">Powered by human-human-AI</p>
+                <p class="powered-by">Powered by human + human + AI</p>
                 <!-- <p class="room-id">Room: {{ roomId }}</p> -->
             </div>
             <div class="controls">
@@ -723,30 +723,21 @@ input:checked + .slider:before {
 
 /* Critical scoped styles that need :deep() for cursor/selection functionality */
 
-/* Remote selection styling - simplified for */
-[class*="remote-selection-"] {
+/* Remote selection styling - using :deep() for scoped CSS penetration */
+:deep([class*="remote-selection-"]) {
+    background-color: rgba(147, 51, 234, 0.25) !important; /* Light purple */
+    border: 1px solid rgba(147, 51, 234, 0.4) !important;
     border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(1px);
 }
 
-/* Two-user selection colors for pair programming */
-.remote-selection-me { 
-    background-color: rgba(79, 70, 229, 0.3) !important; 
-    border-color: rgba(79, 70, 229, 0.5); 
-}
-.remote-selection-other { 
-    background-color: rgba(239, 68, 68, 0.3) !important; 
-    border-color: rgba(239, 68, 68, 0.5); 
-}
-
-/* Remote cursor styles */
-.remote-cursor {
+/* Remote cursor styles - keep original red color with :deep() */
+:deep(.remote-cursor) {
     position: relative !important;
     display: inline-block !important;
     width: 2px !important;
     height: 1em !important;
-    background: #ef4444 !important;
+    background: #ef4444 !important; /* Keep red cursor */
     border-radius: 1px !important;
     margin-left: -1px !important;
     pointer-events: none !important;
@@ -755,27 +746,13 @@ input:checked + .slider:before {
     animation: cursor-blink 1s infinite;
 }
 
-/* User-specific cursor colors */
-.remote-cursor-me {
-    background: #4f46e5 !important;
-}
-
-.remote-cursor-other {
-    background: #ef4444 !important;
-}
-
-/* Cursor blinking animation */
-@keyframes cursor-blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0.3; }
-}
-
-/* Dynamic cursor colors for any user ID pattern */
-[class*="remote-cursor-"] {
+/* All remote cursors use the same red color */
+:deep([class*="remote-cursor-"]) {
     position: relative !important;
     display: inline-block !important;
     width: 2px !important;
     height: 1em !important;
+    background: #ef4444 !important; /* Keep red cursor */
     border-radius: 1px !important;
     margin-left: -1px !important;
     pointer-events: none !important;
@@ -919,67 +896,7 @@ input:checked + .slider:before {
 }
 
 /* Critical scoped styles that need :deep() for cursor/selection functionality */
-
-/* Remote selection styling - simplified for */
-[class*="remote-selection-"] {
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(1px);
-}
-
-/* Two-user selection colors for pair programming */
-.remote-selection-me { 
-    background-color: rgba(79, 70, 229, 0.3) !important; 
-    border-color: rgba(79, 70, 229, 0.5); 
-}
-.remote-selection-other { 
-    background-color: rgba(239, 68, 68, 0.3) !important; 
-    border-color: rgba(239, 68, 68, 0.5); 
-}
-
-/* Remote cursor styles */
-.remote-cursor {
-    position: relative !important;
-    display: inline-block !important;
-    width: 2px !important;
-    height: 1em !important;
-    background: #ef4444 !important;
-    border-radius: 1px !important;
-    margin-left: -1px !important;
-    pointer-events: none !important;
-    z-index: 45 !important;
-    opacity: 1 !important;
-    animation: cursor-blink 1s infinite;
-}
-
-/* User-specific cursor colors */
-.remote-cursor-me {
-    background: #4f46e5 !important;
-}
-
-.remote-cursor-other {
-    background: #ef4444 !important;
-}
-
-/* Cursor blinking animation */
-@keyframes cursor-blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0.3; }
-}
-
-/* Dynamic cursor colors for any user ID pattern */
-[class*="remote-cursor-"] {
-    position: relative !important;
-    display: inline-block !important;
-    width: 2px !important;
-    height: 1em !important;
-    border-radius: 1px !important;
-    margin-left: -1px !important;
-    pointer-events: none !important;
-    z-index: 45 !important;
-    opacity: 1 !important;
-    animation: cursor-blink 1s infinite;
-}
+/* (Main styles defined earlier in the file with proper :deep() selectors) */
 
 /* Dynamic user-specific selections based on socket ID hash */
 :deep(.cm-editor) [class*="remote-selection-"] {

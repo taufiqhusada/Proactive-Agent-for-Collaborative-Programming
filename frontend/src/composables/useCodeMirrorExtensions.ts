@@ -123,12 +123,11 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
             const isWidget = decoration.spec.widget instanceof RemoteCursorWidget
             const widgetUserId = isWidget ? decoration.spec.widget.userId : null
             
-            // Check if this decoration belongs to this user
-            const userColorInfo = generateUserColor(userId, true) // true = remote user
-            const isThisUserSelection = className.includes(`remote-selection-${userColorInfo.classIndex}`)
+            // Clear ANY remote selection and ANY cursor widget for this user
+            const isRemoteSelection = className.includes('remote-selection-')
             const isThisUserCursor = isWidget && widgetUserId === userId
             
-            if (!isThisUserSelection && !isThisUserCursor) {
+            if (!isRemoteSelection && !isThisUserCursor) {
               newDecorations.push(decoration.range(decorFrom, decorTo))
             } else {
               console.log(`Removing old decoration for user ${userId}: ${className || 'cursor widget'}`)
@@ -183,12 +182,18 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
               const isWidget = decoration.spec.widget instanceof RemoteCursorWidget
               const widgetUserId = isWidget ? decoration.spec.widget.userId : null
               
-              // Check if this decoration belongs to this user
-              const userColorInfo = generateUserColor(userId, true) // true = remote user
-              const isThisUserSelection = className.includes(`remote-selection-${userColorInfo.classIndex}`)
+              // Clear ANY selection that contains "remote-selection-" and ANY cursor widget for this user
+              const isRemoteSelection = className.includes('remote-selection-')
               const isThisUserCursor = isWidget && widgetUserId === userId
               
-              return !isThisUserSelection && !isThisUserCursor
+              // Keep decorations that are NOT remote selections AND not this user's cursor
+              const shouldKeep = !isRemoteSelection && !isThisUserCursor
+              
+              if (!shouldKeep) {
+                console.log(`Removing decoration for user ${userId}: ${className || 'cursor widget'}`)
+              }
+              
+              return shouldKeep
             }
           })
         }

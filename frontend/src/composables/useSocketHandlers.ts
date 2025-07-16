@@ -104,11 +104,18 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
     if (data.userId !== socket.id && view.value) {
       console.log('Processing remote selection from different user')
       try {
+        // First, always clear any existing selection/cursor for this user
+        view.value.dispatch({
+          effects: [clearRemoteCursor.of(data.userId)]
+        })
+        
+        // Then, if there's a valid selection, add it
         if (data.from !== data.to && 
             typeof data.from === 'number' && 
             typeof data.to === 'number' && 
             data.from >= 0 && 
-            data.to >= 0) {
+            data.to >= 0 &&
+            data.from !== 0 || data.to !== 0) { // Don't show selection if both are 0 (deselected)
           
           console.log('Adding remote selection decoration from', data.from, 'to', data.to)
           const userColor = data.classIndex !== undefined ? 
@@ -125,10 +132,7 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
             })]
           })
         } else {
-          console.log('Clearing remote selection (no valid selection)')
-          view.value.dispatch({
-            effects: [clearRemoteCursor.of(data.userId)]
-          })
+          console.log('Clearing remote selection (no valid selection or deselected)')
         }
       } catch (error) {
         console.error('Error handling remote selection:', error)
