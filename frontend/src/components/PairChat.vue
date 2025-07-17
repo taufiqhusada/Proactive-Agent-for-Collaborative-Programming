@@ -96,13 +96,27 @@
 
         <div class="chat-input">
             <div class="input-wrapper">
+                <!-- @AI Mention Button -->
+                <div v-if="!individualMode" class="ai-mention-controls">
+                    <button 
+                        @click="toggleAIMention"
+                        :class="['ai-mention-btn', { active: hasAIMention }]"
+                        :disabled="!isConnected || !sessionStarted"
+                        :title="hasAIMention ? 'Remove @AI mention' : 'Mention AI directly'"
+                    >
+                        @AI
+                    </button>
+                </div>
+                
                 <input 
                     v-model="newMessage" 
                     @keyup.enter="sendMessage"
                     @input="handleTypingActivity"
                     :placeholder="sessionStarted ? 'Type your message...' : 'Start session to begin chatting'"
                     class="message-input"
+                    :class="{ 'with-ai-mention': hasAIMention }"
                     :disabled="!isConnected || !sessionStarted"
+                    ref="messageInput"
                 />
                 <button 
                     @click="toggleAutoRecording" 
@@ -266,6 +280,15 @@ export default defineComponent({
         const showResetWarning = ref(false)
         const showSuccessPopup = ref(false)
 
+        // @AI Mention State
+        const messageInput = ref(null)
+
+        // Computed property to check if message has @AI mention
+        const hasAIMention = computed(() => {
+            const content = newMessage.value.toLowerCase().trim()
+            return content.startsWith('@ai ') || content === '@ai'
+        })
+
         const formatTime = (timestamp) => {
             const date = new Date(timestamp)
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -321,6 +344,36 @@ export default defineComponent({
                 })
                 console.log('📤 Notified backend of chat typing activity for timer cancellation')
             }
+        }
+
+        // @AI Mention toggle function
+        const toggleAIMention = () => {
+            if (hasAIMention.value) {
+                // Remove @AI mention
+                const content = newMessage.value.trim()
+                if (content.toLowerCase().startsWith('@ai ')) {
+                    newMessage.value = content.substring(4) // Remove "@AI "
+                } else if (content.toLowerCase() === '@ai') {
+                    newMessage.value = '' // Remove just "@AI"
+                }
+            } else {
+                // Add @AI mention
+                const currentContent = newMessage.value.trim()
+                if (currentContent) {
+                    newMessage.value = '@AI ' + currentContent
+                } else {
+                    newMessage.value = '@AI '
+                }
+            }
+            
+            // Focus the input after toggle
+            nextTick(() => {
+                if (messageInput.value) {
+                    messageInput.value.focus()
+                    // Set cursor to end
+                    messageInput.value.setSelectionRange(newMessage.value.length, newMessage.value.length)
+                }
+            })
         }
 
         const sendMessage = () => {
@@ -1737,7 +1790,7 @@ export default defineComponent({
                     window.dispatchEvent(new CustomEvent('ai-message-for-personal-chat', {
                         detail: {
                             content: message.content,
-                            timestamp: message.timestamp || new Date().toISOString(),
+                            timestamp: message.timestamp,
                             hasAudio: message.hasAudio || false,
                             isReflection: message.isReflection || false,
                             isExecutionHelp: message.isExecutionHelp || false
@@ -1943,7 +1996,7 @@ export default defineComponent({
                     
                     // Show success message in chat
                     const resetMessage = {
-                        id: `reset_${Date.now()}`,
+                                               id: `reset_${Date.now()}`,
                         content: '🔄 AI agent state has been reset. Fresh start!',
                         username: 'System',
                         userId: 'system',
@@ -2033,6 +2086,7 @@ export default defineComponent({
             allMessages: messages, // Keep reference to all messages for addMessage function
             newMessage,
             messagesContainer,
+            messageInput,
             isConnected,
             onlineUsers,
             speechSupported,
@@ -2050,12 +2104,14 @@ export default defineComponent({
             sessionStarted,
             showResetWarning,
             showSuccessPopup,
+            hasAIMention,
             formatTime,
             sendMessage,
             addMessage,
             addReflectionMessage,
             toggleAutoRecording,
             toggleAIVoice,
+            toggleAIMention,
             dismissTooltip,
             handleTypingActivity,
             handleTypingStart,
@@ -2315,6 +2371,70 @@ export default defineComponent({
     display: flex;
     gap: 0.5rem;
     align-items: center;
+}
+
+/* @AI Mention Controls */
+.ai-mention-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ai-mention-btn {
+    padding: 0.75rem !important;
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    color: #4b5563 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.ai-mention-btn:hover:not(:disabled) {
+    background: #f8fafc !important;
+    border-color: #667eea !important;
+    color: #667eea !important;
+    animation: none !important;
+    transform: none !important;
+}
+
+.ai-mention-btn:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    background: #f1f5f9 !important;
+    animation: none !important;
+    transform: none !important;
+}
+
+.ai-mention-btn.active {
+    background: white !important;
+    border-color: #667eea !important;
+    color: #667eea !important;
+    font-weight: 600 !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.ai-mention-btn.active:hover:not(:disabled) {
+    background: #f8fafc !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Input styling when @AI is active */
+.message-input.with-ai-mention {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 
 .message-input {
@@ -2862,5 +2982,63 @@ export default defineComponent({
         transform: translateY(0);
         opacity: 1;
     }
+}
+
+/* AI mention button styles */
+.ai-mention-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ai-mention-btn {
+    padding: 0.75rem !important;
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    color: #4b5563 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.ai-mention-btn:hover:not(:disabled) {
+    background: #f8fafc !important;
+    border-color: #667eea !important;
+    color: #667eea !important;
+    animation: none !important;
+    transform: none !important;
+}
+
+.ai-mention-btn:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    background: #f1f5f9 !important;
+    animation: none !important;
+    transform: none !important;
+}
+
+.ai-mention-btn.active {
+    background: white !important;
+    border-color: #667eea !important;
+    color: #667eea !important;
+    font-weight: 600 !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.ai-mention-btn.active:hover:not(:disabled) {
+    background: #f8fafc !important;
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
 }
 </style>
