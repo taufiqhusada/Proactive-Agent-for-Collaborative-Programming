@@ -15,6 +15,7 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from services.ai_agent import init_ai_agent, get_ai_agent
 from services.scaffolding_service import ScaffoldingService
+from services.individual_ai_service import init_individual_ai_service, get_individual_ai_service
 
 load_dotenv()
 
@@ -37,17 +38,26 @@ class ConnectionManager:
         self.rooms = {}      # room_id -> set(sid)
         self.room_state = {} # room_id -> { code: str, language: str }
         self.user_names = {} # sid -> username mapping
+        self.session_states = {} # room_id -> { started: bool, ai_mode: str, locked: bool }
 
     def join(self, sid: str, room: str, username: str = None):
         self.rooms.setdefault(room, set()).add(sid)
         if username:
             self.user_names[sid] = username
+        # Initialize session state if not exists
+        if room not in self.session_states:
+            self.session_states[room] = {
+                'started': False,
+                'ai_mode': 'shared',
+                'locked': False
+            }
 
     def leave(self, sid: str, room: str):
         self.rooms.get(room, set()).discard(sid)
         if room in self.rooms and not self.rooms[room]:
             self.rooms.pop(room, None)
             self.room_state.pop(room, None)
+            self.session_states.pop(room, None)
         # Clean up username when user leaves
         self.user_names.pop(sid, None)
 
@@ -57,14 +67,47 @@ class ConnectionManager:
     def get_room_state(self, room: str):
         return self.room_state.get(room, {"code": 'print("Hello")', "language": "python"})
 
+    def set_session_started(self, room: str, started: bool):
+        """Set session started state and lock AI mode if starting"""
+        if room not in self.session_states:
+            self.session_states[room] = {
+                'started': False,
+                'ai_mode': 'shared',
+                'locked': False
+            }
+        self.session_states[room]['started'] = started
+        self.session_states[room]['locked'] = started  # Lock mode when session starts
+        
+    def is_session_started(self, room: str):
+        """Check if session is started for a room"""
+        return self.session_states.get(room, {}).get('started', False)
+        
+    def is_ai_mode_locked(self, room: str):
+        """Check if AI mode is locked for a room"""
+        return self.session_states.get(room, {}).get('locked', False)
+        
+    def set_ai_mode(self, room: str, mode: str):
+        """Set AI mode for a room if not locked"""
+        if room not in self.session_states:
+            self.session_states[room] = {
+                'started': False,
+                'ai_mode': 'shared',
+                'locked': False
+            }
+        if not self.session_states[room]['locked']:
+            self.session_states[room]['ai_mode'] = mode
+            return True
+        return False
+
     def set_room_state(self, room: str, code: str, language: str = "python"):
         self.room_state[room] = {"code": code, "language": language}
 
 manager = ConnectionManager()
 
-# Initialize AI Agent, Scaffolding Service, and Reflection Service
+# Initialize AI Agent, Scaffolding Service, Individual AI Service, and Reflection Service
 ai_agent = init_ai_agent(socketio)
 scaffolding_service = ScaffoldingService()
+individual_ai_service = init_individual_ai_service(socketio)
 
 # Initialize Reflection Service
 from services.ai_reflection import init_reflection_service
@@ -208,6 +251,39 @@ def ws_chat_message(data):
         print(f"🤖 AI message processing completed for room {room}")
     
     threading.Thread(target=process_ai_message, daemon=True).start()
+
+@socketio.on("ai_mode_changed", namespace="/ws")
+def ws_ai_mode_changed(data):
+    """
+    Handle AI mode changes and broadcast to all users in the room.
+    """
+    print(f"🔄 AI mode change requested to {data['mode']} by user {data['changedBy']} in room {data['roomId']}")
+    room = data["roomId"]
+    
+    # Check if AI mode is locked (session started)
+    if manager.is_ai_mode_locked(room):
+        print(f"🔒 AI mode is locked for room {room} - session already started")
+        emit("ai_mode_change_rejected", {
+            "error": "Cannot change AI mode during active session",
+            "reason": "Session already started"
+        })
+        return
+    
+    # Try to set the AI mode
+    if manager.set_ai_mode(room, data["mode"]):
+        # Broadcast the mode change to all users in the room (including sender for confirmation)
+        emit("ai_mode_changed", {
+            "mode": data["mode"],
+            "changedBy": data["changedBy"]
+        }, room=room)
+        
+        print(f"📡 AI mode change to {data['mode']} accepted and broadcasted to room {room}")
+    else:
+        print(f"� AI mode change rejected for room {room} - mode is locked")
+        emit("ai_mode_change_rejected", {
+            "error": "Cannot change AI mode during active session",
+            "reason": "Mode is locked"
+        })
 
 @socketio.on("problem_update", namespace="/ws")
 def ws_problem_update(data):
@@ -421,6 +497,52 @@ def login():
     user = request.json.get("username", "guest")
     access = create_access_token(identity=user)
     return jsonify(access_token=access)
+
+@app.route("/api/individual-ai", methods=["POST"])
+def individual_ai_chat():
+    """
+    Handle individual AI assistant messages via REST API.
+    Accepts JSON: {
+        "userId": "user_id",
+        "roomId": "room_id", 
+        "message": "user_message"
+    }
+    Returns JSON: {
+        "response": "ai_response",
+        "timestamp": "iso_timestamp"
+    }
+    """
+    try:
+        data = request.json
+        user_id = data.get("userId")
+        room_id = data.get("roomId")
+        message = data.get("message")
+        
+        if not all([user_id, room_id, message]):
+            return jsonify({
+                "error": "Missing required fields: userId, roomId, message"
+            }), 400
+        
+        # Get AI response synchronously
+        ai_response = individual_ai_service.handle_individual_message_sync(
+            user_id, room_id, message
+        )
+        
+        if ai_response:
+            return jsonify({
+                "response": ai_response,
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                "error": "Failed to generate AI response"
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ Error in individual AI endpoint: {e}")
+        return jsonify({
+            "error": "Internal server error"
+        }), 500
 
 @app.route("/api/run", methods=["POST"])
 @jwt_required()
@@ -694,6 +816,9 @@ def reset_ai_state():
         # Reset the AI agent state
         ai_agent.reset_room_state(room_id)
         
+        # Reset session state and unlock AI mode
+        manager.set_session_started(room_id, False)
+        
         # Also end any active reflection sessions for this room
         from services.ai_reflection import get_reflection_service
         reflection_service = get_reflection_service()
@@ -852,6 +977,9 @@ def start_session():
             return jsonify({'success': False, 'error': 'Room ID is required'}), 400
         
         print(f"🚀 Starting session for room {room_id}")
+        
+        # Mark session as started and lock AI mode
+        manager.set_session_started(room_id, True)
         
         # Send Bob greeting for session start
         ai_agent.send_session_start_greeting(room_id)

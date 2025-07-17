@@ -610,6 +610,12 @@ Your response:"""
             # Clear code analysis tracking
             self.code_analysis_service.reset_execution_tracking(room_id)
             
+            # Clear individual AI conversations for all users in this room
+            from .individual_ai_service import get_individual_ai_service
+            individual_ai = get_individual_ai_service()
+            if individual_ai:
+                individual_ai.clear_room_conversations(room_id)
+            
             print(f"✅ Successfully reset AI agent state for room {room_id}")
             
         except Exception as e:

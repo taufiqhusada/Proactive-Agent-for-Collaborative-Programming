@@ -19,6 +19,15 @@
                         <option value="javascript">🚀 JavaScript</option>
                     </select>
                 </div>
+                <div class="ai-mode-control">
+                    <AIModeToggle 
+                        :room-id="roomId"
+                        :user-id="currentUserId"
+                        :socket="socket"
+                        :session-started="chatSessionStarted"
+                        @mode-changed="handleAIModeChanged"
+                    />
+                </div>
                 <div class="mode-toggle">
                     <label class="switch">
                         <input type="checkbox" v-model="isReadOnly" id="readOnlyMode">
@@ -66,23 +75,19 @@
 
             <!-- Right Panel: Chat -->
             <div class="right-panel">
-                <div class="ai-status-section">
-                    <AIAgentStatus 
-                        :reflectionActive="showReflectionSession"
-                        @start-reflection="startReflectionSession"
-                        @stop-reflection="stopReflectionSession"
-                    />
-                </div>
-                
-                <PairChat 
-                    ref="pairChat"
+                <ChatContainer 
+                    ref="chatContainer"
                     :socket="socket" 
                     :room-id="roomId" 
                     :current-user-id="currentUserId"
                     :username="auth?.user || 'Guest'"
-                    :reflection-session-id="reflectionSessionId" 
+                    :reflection-session-id="reflectionSessionId"
+                    :show-reflection-session="showReflectionSession"
                     @reflection-session-started="handleReflectionSessionStarted"
-                    @reflection-session-ended="handleReflectionSessionEnded" />
+                    @reflection-session-ended="handleReflectionSessionEnded"
+                    @start-reflection="startReflectionSession"
+                    @stop-reflection="stopReflectionSession"
+                    @session-state-changed="handleChatSessionStateChanged" />
             </div>
         </div>
         
@@ -124,8 +129,8 @@ import { runCode } from '@/lib/runCode'
 import { debounce } from 'lodash'
 import { useAuth } from '@/stores/useAuth'
 import ProblemDescription from '@/components/ProblemDescription.vue'
-import PairChat from '@/components/PairChat.vue'
-import AIAgentStatus from '@/components/AIAgentStatus.vue'
+import ChatContainer from '@/components/ChatContainer.vue'
+import AIModeToggle from '@/components/AIModeToggle.vue'
 import CodeIssuePanel from '@/components/CodeIssuePanel.vue'
 import CodeRunner from '@/components/CodeRunner.vue'
 
@@ -141,8 +146,8 @@ export default defineComponent({
     components: {
         Codemirror,
         ProblemDescription,
-        PairChat,
-        AIAgentStatus,
+        ChatContainer,
+        AIModeToggle,
         CodeIssuePanel,
         CodeRunner,
     },
@@ -161,10 +166,11 @@ export default defineComponent({
         const currentUserId = ref('')
         const currentProblem = ref(null)
         const selectedProblem = ref(0)
+        const chatSessionStarted = ref(false)
         const { socket, connect } = useSocket()
         
         // Component refs
-        const pairChat = ref(null)
+        const chatContainer = ref(null)
 
         const languages = {
             python: python(),
@@ -325,10 +331,24 @@ export default defineComponent({
 
         // Handle chat message from CodeRunner
         const handleCodeRunnerChatMessage = (message) => {
-            // Forward the message to PairChat component
-            if (pairChat.value) {
-                pairChat.value.addMessage(message);
+            // Forward the message to ChatContainer component
+            if (chatContainer.value) {
+                chatContainer.value.addMessage(message);
             }
+        }
+
+        // Handle AI mode change from header toggle
+        const handleAIModeChanged = (data) => {
+            // Forward the mode change to ChatContainer
+            if (chatContainer.value) {
+                chatContainer.value.handleModeChanged(data)
+            }
+        }
+
+        // Handle chat session state changes
+        const handleChatSessionStateChanged = (data) => {
+            console.log('🔄 Chat session state changed:', data)
+            chatSessionStarted.value = data.sessionStarted
         }
 
         // Watch for socket ID changes (reconnections)
@@ -375,6 +395,7 @@ export default defineComponent({
             currentUserId,
             currentProblem,
             selectedProblem,
+            chatSessionStarted,
             computedExtensions: codeMirrorExtensions.computedExtensions,
             socket,
             handleReady,
@@ -406,9 +427,11 @@ export default defineComponent({
             
             // Chat handling
             handleCodeRunnerChatMessage,
+            handleAIModeChanged,
+            handleChatSessionStateChanged,
             handleReflectionSessionStarted: reflectionSession.handleReflectionSessionStarted,
             handleReflectionSessionEnded: reflectionSession.handleReflectionSessionEnded,
-            pairChat,
+            chatContainer,
         }
     }
 })
@@ -471,6 +494,11 @@ export default defineComponent({
     display: flex;
     align-items: center;
     gap: 1.5rem;
+}
+
+.ai-mode-control {
+    display: flex;
+    align-items: center;
 }
 
 .language-selector {

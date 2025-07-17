@@ -3,7 +3,7 @@
         <div class="chat-header">
             <h6 class="chat-title">
                 <span class="chat-icon">💬</span>
-                Team Chat
+                {{ individualMode ? 'Team Chat (Human Only)' : 'Team Chat' }}
             </h6>
             <div class="header-controls">
                 <div class="online-users">
@@ -186,7 +186,8 @@
 </template>
 
 <script>
-import { defineComponent, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { aiModeService } from '../services/aiModeService'
 
 export default defineComponent({
     name: 'PairChat',
@@ -210,9 +211,13 @@ export default defineComponent({
         reflectionSessionId: {
             type: String,
             default: ''
+        },
+        individualMode: {
+            type: Boolean,
+            default: false
         }
     },
-    emits: ['reflection-session-started', 'reflection-session-ended'],
+    emits: ['reflection-session-started', 'reflection-session-ended', 'session-state-changed'],
     setup(props, { emit }) {
         const messages = ref([])
         const newMessage = ref('')
@@ -363,23 +368,65 @@ export default defineComponent({
         }
 
         const handleIncomingMessage = (message) => {
-            // Don't add our own messages again
-            if (message.userId === props.currentUserId) return
+            console.log(`📨 PairChat [${props.individualMode ? 'Individual' : 'Shared'}] handling message:`, {
+                isAI: message.isAI,
+                userId: message.userId,
+                currentUserId: props.currentUserId,
+                content: message.content?.substring(0, 50) + '...',
+                mode: aiModeService.getCurrentMode()
+            })
             
+            // Don't add our own messages again
+            if (message.userId === props.currentUserId) {
+                console.log(`🚫 Skipping own message from user ${message.userId}`)
+                return
+            }
+            
+            // AI MODE ROUTING: In Personal AI mode, route AI messages to personal chat
+            if (message.isAI && aiModeService.isIndividualMode()) {
+                console.log(`🤖 Personal AI Mode: AI message received by ${props.individualMode ? 'Individual' : 'Shared'} instance`)
+                
+                // Send to individual AI chat instead of team chat
+                if (window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('ai-message-for-personal-chat', {
+                        detail: {
+                            content: message.content,
+                            timestamp: message.timestamp,
+                            hasAudio: message.hasAudio || false,
+                            isReflection: message.isReflection || false,
+                            isExecutionHelp: message.isExecutionHelp || false
+                        }
+                    }))
+                }
+                
+                // DON'T add to team chat and DON'T play audio - just return early
+                return
+            }
+            
+            console.log(`✅ Adding message to ${props.individualMode ? 'Individual' : 'Shared'} chat`)
+            
+            // Normal shared mode processing
             messages.value.push(message)
             
             // Don't use browser TTS for AI messages with hasAudio flag
             // The audio will come separately via ai_speech event
             if (message.isAI && !message.hasAudio && aiVoiceEnabled.value) {
-                // Fallback to browser TTS only if no server audio is available
-                speakMessage(message.content, true)
+                // Only play audio in shared mode
+                if (aiModeService.isSharedMode()) {
+                    speakMessage(message.content, true)
+                }
             }
             
             scrollToBottom()
         }
 
         const handleAISpeech = (data) => {
-            // Play high-quality AI speech audio (legacy single-chunk method)
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                return
+            }
+            
+            // Play high-quality AI speech audio (legacy single-chunk method) only in Shared mode
             if (aiVoiceEnabled.value && data.audioData) {
                 playAudioFromBase64(data.audioData, data.messageId || `legacy_${Date.now()}`)
             }
@@ -390,6 +437,12 @@ export default defineComponent({
         const activeAudioStreams = ref(new Set()) // Set of messageIds being streamed
 
         const handleAudioStreamStart = (data) => {
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                console.log('🔇 Personal AI Mode: Voice output disabled - skipping audio stream')
+                return
+            }
+            
             if (!aiVoiceEnabled.value) return
             
             const { messageId } = data
@@ -431,6 +484,11 @@ export default defineComponent({
         }
 
         const handleAudioChunk = async (data) => {
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                return
+            }
+            
             if (!aiVoiceEnabled.value) return
             
             const { messageId, audioData, chunkNumber, isRealtime, format, isComplete, isFinalMarker } = data
@@ -493,6 +551,11 @@ export default defineComponent({
         }
 
         const handleAudioStreamComplete = async (data) => {
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                return
+            }
+            
             const { messageId, totalChunks, format } = data
             const streamData = streamingAudioChunks.value.get(messageId)
             
@@ -649,6 +712,11 @@ export default defineComponent({
         }
 
         const handleAudioStreamDone = (data) => {
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                return
+            }
+            
             const { messageId, status, format } = data
             console.log(`🎯 AI audio streaming completely done for ${messageId} with status: ${status}`)
             
@@ -666,6 +734,11 @@ export default defineComponent({
         }
 
         const handleAudioError = (data) => {
+            // In Personal AI mode, disable voice output completely
+            if (aiModeService.isIndividualMode()) {
+                return
+            }
+            
             const { messageId, error } = data
             console.error(`Audio error for message ${messageId}:`, error)
             
@@ -1649,12 +1722,70 @@ export default defineComponent({
 
         // Add a function to manually add messages (for CodeRunner integration)
         const addMessage = (message) => {
+            console.log(`📨 PairChat [${props.individualMode ? 'Individual' : 'Shared'}] manually adding message:`, {
+                isAI: message.isAI,
+                content: message.content?.substring(0, 50) + '...',
+                mode: aiModeService.getCurrentMode()
+            })
+            
+            // AI MODE ROUTING: In Personal AI mode, route AI messages to personal chat
+            if (message.isAI && aiModeService.isIndividualMode()) {
+                console.log(`🤖 Personal AI Mode: AI message manually added by ${props.individualMode ? 'Individual' : 'Shared'} instance`)
+                
+                // Send to individual AI chat instead of team chat
+                if (window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('ai-message-for-personal-chat', {
+                        detail: {
+                            content: message.content,
+                            timestamp: message.timestamp || new Date().toISOString(),
+                            hasAudio: message.hasAudio || false,
+                            isReflection: message.isReflection || false,
+                            isExecutionHelp: message.isExecutionHelp || false
+                        }
+                    }))
+                }
+                
+                // DON'T add to team chat - just return early
+                return
+            }
+            
+            console.log(`✅ Adding manual message to ${props.individualMode ? 'Individual' : 'Shared'} chat`)
             messages.value.push(message)
             scrollToBottom()
         }
 
         const addReflectionMessage = (content, username, isAI = false, isSystem = false, hasAudio = false) => {
-            console.log('🎓 FRONTEND: addReflectionMessage called:', { content, username, isAI, isSystem, hasAudio })
+            console.log(`🎓 PairChat [${props.individualMode ? 'Individual' : 'Shared'}] addReflectionMessage called:`, { 
+                content: content.substring(0, 50) + '...', 
+                username, 
+                isAI, 
+                isSystem, 
+                hasAudio,
+                mode: aiModeService.getCurrentMode()
+            })
+            
+            // AI MODE ROUTING: In Personal AI mode, route AI messages to personal chat
+            if (isAI && aiModeService.isIndividualMode()) {
+                console.log(`🎓 Personal AI Mode: Reflection AI message by ${props.individualMode ? 'Individual' : 'Shared'} instance`)
+                
+                // Send to individual AI chat instead of team chat
+                if (window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('ai-message-for-personal-chat', {
+                        detail: {
+                            content: content,
+                            timestamp: new Date().toISOString(),
+                            hasAudio: hasAudio || false,
+                            isReflection: true,
+                            isExecutionHelp: false
+                        }
+                    }))
+                }
+                
+                // DON'T add to team chat and DON'T play audio - just return early
+                return
+            }
+            
+            console.log(`✅ Adding reflection message to ${props.individualMode ? 'Individual' : 'Shared'} chat`)
             
             const message = {
                 id: Date.now() + Math.random(), // Ensure uniqueness
@@ -1674,8 +1805,8 @@ export default defineComponent({
             console.log('🎓 FRONTEND: Messages count after push:', messages.value.length)
             scrollToBottom()
             
-            // Only use browser TTS if server doesn't provide audio
-            if (isAI && aiVoiceEnabled.value && !hasAudio) {
+            // Only use browser TTS if server doesn't provide audio and in shared mode
+            if (isAI && aiVoiceEnabled.value && !hasAudio && aiModeService.isSharedMode()) {
                 speakMessage(content, true)
             }
         }
@@ -1684,6 +1815,7 @@ export default defineComponent({
         const startSession = async () => {
             console.log('🚀 Starting pair programming session...')
             sessionStarted.value = true
+            emit('session-state-changed', { sessionStarted: true })
             
             try {
                 // Call backend API to start session and send Bob greeting
@@ -1752,8 +1884,13 @@ export default defineComponent({
                     speechQueue.value = []
                     isSpeaking.value = false
                     sessionStarted.value = false
+                    emit('session-state-changed', { sessionStarted: false })
                     
-                    // 4. Show success popup
+                    // 4. Clear individual AI chat by emitting event to ChatContainer
+                    emit('clear-individual-ai-chat')
+                    console.log('🧹 Emitted clear-individual-ai-chat event to parent')
+                    
+                    // 5. Show success popup
                     showSuccessPopup.value = true
                     setTimeout(() => {
                         showSuccessPopup.value = false
@@ -1838,17 +1975,22 @@ export default defineComponent({
                 // Update session started state if not initiated by this user
                 if (!sessionStarted.value) {
                     sessionStarted.value = true
+                    emit('session-state-changed', { sessionStarted: true })
                     console.log('📡 Session started by another user - updating local state')
                 }
             } else if (data.action === 'session_reset') {
                 // Update session state if not initiated by this user
                 if (sessionStarted.value || messages.value.length > 0) {
                     sessionStarted.value = false
+                    emit('session-state-changed', { sessionStarted: false })
                     messages.value = []
                     currentAutoTranscript.value = ''
                     speechQueue.value = []
                     isSpeaking.value = false
-                    console.log('📡 Session reset by another user - updating local state')
+                    
+                    // Also clear individual AI chat when session is reset by another user
+                    emit('clear-individual-ai-chat')
+                    console.log('📡 Session reset by another user - updating local state and clearing individual AI chat')
                 }
             } else if (data.action === 'reflection_started') {
                 // Emit reflection started event to parent components
@@ -1877,8 +2019,18 @@ export default defineComponent({
             }
         }
 
+        // Filter messages based on mode
+        const filteredMessages = computed(() => {
+            if (props.individualMode) {
+                // In individual mode, filter out AI messages (they go to separate AI chat)
+                return messages.value.filter(message => !message.isAI)
+            }
+            return messages.value
+        })
+
         return {
-            messages,
+            messages: filteredMessages,
+            allMessages: messages, // Keep reference to all messages for addMessage function
             newMessage,
             messagesContainer,
             isConnected,
