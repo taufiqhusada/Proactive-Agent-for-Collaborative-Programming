@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
-from openai import OpenAI, AsyncOpenAI
+from openai import OpenAI
 
 from .ai_models import Message, ConversationContext
 from .ai_audio import AIAudioService
@@ -27,17 +27,14 @@ class AIAgent:
             print("⚠️  Warning: No OpenAI API key found. AI agent will be disabled.")
             print("   Set OPENAI_API_KEY in your .env file to enable AI responses.")
             self.client = None
-            self.async_client = None
         else:
             try:
                 self.client = OpenAI(api_key=api_key)
-                self.async_client = AsyncOpenAI(api_key=api_key)
                 print("✅ AI Agent (Bob) initialized successfully!")
             except Exception as e:
                 print(f"❌ Error initializing OpenAI client: {e}")
                 print("   AI agent will be disabled.")
                 self.client = None
-                self.async_client = None
         
         self.socketio = socketio_instance
         self.conversation_history = {}  # room_id -> ConversationContext
@@ -48,7 +45,7 @@ class AIAgent:
         
         # Initialize specialized services
         self.audio_service = AIAudioService(
-            socketio_instance, self.async_client, self.agent_name, self.agent_id
+            socketio_instance, self.client, self.agent_name, self.agent_id
         )
         
         self.intervention_service = AIInterventionService(
@@ -58,7 +55,7 @@ class AIAgent:
         )
         
         self.code_analysis_service = AICodeAnalysisService(
-            self.client, self.async_client, socketio_instance
+            self.client, socketio_instance
         )
         
         # Reflection service will be obtained when needed (it may not be initialized yet)
@@ -335,7 +332,7 @@ class AIAgent:
         """Simple decision making for AI intervention after 5-second idle"""
         return self.intervention_service.should_respond(room_id, self.conversation_history)
 
-    async def generate_response(self, room_id: str) -> Optional[str]:
+    def generate_response(self, room_id: str) -> Optional[str]:
         """Generate AI response using centralized decision"""
         if not self.client:
             print("⚠️  Cannot generate AI response: OpenAI client not initialized")
@@ -390,15 +387,6 @@ class AIAgent:
             self.add_message_to_context(manual_message)
             print(f"🤖 Manually added AI message to context: {content[:50]}...")
 
-    async def send_ai_execution_help_message(self, room_id: str, content: str):
-        """Send an AI execution help message with different styling"""
-        message = await self.audio_service.send_ai_message_with_audio(
-            room_id, content, False, True, self.conversation_history
-        )
-        
-        # Add AI message to conversation context
-        if message:
-            self.add_message_to_context(message)
 
     def process_message_sync(self, message_data: Dict[str, Any]):
         """Process a new message and potentially respond"""
@@ -504,14 +492,6 @@ class AIAgent:
         """Start non-blocking AI analysis for execution panel"""
         self.code_analysis_service.start_panel_analysis(room_id, code, result, self.conversation_history)
 
-    def start_execution_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any]):
-        """Start optimized execution validation"""
-        async def send_help_callback(room_id: str, message: str):
-            await self.send_ai_execution_help_message(room_id, message)
-            
-        self.code_analysis_service.start_execution_validation_optimized(
-            room_id, code, execution_result, self.conversation_history, send_help_callback
-        )
 
     def _check_planning_intervention(self, room_id: str):
         """Check if planning intervention is needed when code is first written"""

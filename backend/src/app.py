@@ -6,7 +6,6 @@ import os
 import subprocess
 import threading
 import time
-import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify

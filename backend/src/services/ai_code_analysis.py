@@ -2,21 +2,19 @@
 AI Code Analysis Service - Handles code analysis and execution validation
 """
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
-from openai import OpenAI, AsyncOpenAI
+from openai import OpenAI
 
 from .ai_models import ConversationContext
 
 
 class AICodeAnalysisService:
-    def __init__(self, client: OpenAI, async_client: AsyncOpenAI, socketio_instance):
+    def __init__(self, client: OpenAI, socketio_instance):
         self.client = client
-        self.async_client = async_client
         self.socketio = socketio_instance
         
         # Execution validation tracking
@@ -231,10 +229,10 @@ class AICodeAnalysisService:
             print(f"❌ Unexpected error: {e}")
             return {'issues': []}
 
-    async def analyze_execution_for_panel(self, code: str, result: dict, problem_context: str = None) -> dict:
+    def analyze_execution_for_panel(self, code: str, result: dict, problem_context: str = None) -> dict:
         """Generate concise help for execution panel display"""
         
-        if not self.async_client:
+        if not self.client:
             return None
         
         try:
@@ -276,7 +274,7 @@ class AICodeAnalysisService:
                     """
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
-            response = await self.async_client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=50,
@@ -312,11 +310,11 @@ class AICodeAnalysisService:
             logging.error(f"Error in panel analysis: {e}")
             return None
 
-    async def analyze_code_execution_async_optimized(self, code: str, execution_result: Dict[str, Any], 
+    def analyze_code_execution_async_optimized(self, code: str, execution_result: Dict[str, Any], 
                                                    problem_context: Optional[str] = None, 
                                                    room_id: Optional[str] = None) -> Dict[str, Any]:
         """OPTIMIZED: Single AI call for analysis + help message generation"""
-        if not self.async_client:
+        if not self.client:
             return {"needs_help": False, "help_message": ""}
             
         try:
@@ -338,7 +336,7 @@ class AICodeAnalysisService:
                         JSON response:
                         {{"needs_help": boolean, "is_correct": boolean, "help_message": "brief help (max 25 words) or empty if correct"}}"""
 
-            response = await self.async_client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=50,  # Slightly higher for problem-aware analysis
@@ -420,12 +418,7 @@ class AICodeAnalysisService:
     def _run_panel_analysis(self, room_id: str, code: str, result: dict, problem_context: str):
         """Background task for panel analysis"""
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            analysis = loop.run_until_complete(
-                self.analyze_execution_for_panel(code, result, problem_context)
-            )
+            analysis = self.analyze_execution_for_panel(code, result, problem_context)
             
             if analysis:
                 print(f"📊 Panel analysis: {analysis['message']}")
@@ -436,13 +429,8 @@ class AICodeAnalysisService:
                 
         except Exception as e:
             logging.error(f"Error in panel analysis background task: {e}")
-        finally:
-            try:
-                loop.close()
-            except:
-                pass
 
-    async def handle_code_execution_validation_optimized(self, room_id: str, code: str, 
+    def handle_code_execution_validation_optimized(self, room_id: str, code: str, 
                                                         execution_result: Dict[str, Any],
                                                         conversation_history, send_help_callback) -> None:
         """OPTIMIZED: Single AI call, faster message delivery"""
@@ -457,7 +445,7 @@ class AICodeAnalysisService:
             problem_context = context.problem_description or context.problem_title
             
             # OPTIMIZATION: Single AI call that analyzes AND generates help message
-            analysis = await self.analyze_code_execution_async_optimized(
+            analysis = self.analyze_code_execution_async_optimized(
                 code, execution_result, problem_context, room_id
             )
             
@@ -475,7 +463,7 @@ class AICodeAnalysisService:
                 help_message = analysis.get('help_message', '')
                 if help_message.strip():
                     # Send help message via callback
-                    await send_help_callback(room_id, help_message)
+                    send_help_callback(room_id, help_message)
             else:
                 # Reset attempts if code is correct
                 self.execution_attempts[room_id] = 0
@@ -499,26 +487,15 @@ class AICodeAnalysisService:
 
     def _run_async_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any],
                                       conversation_history, send_help_callback) -> None:
-        """OPTIMIZED: Single event loop creation"""
+        """OPTIMIZED: Direct execution without event loop"""
         try:
-            # Create new event loop for this thread (only once)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # Run the optimized validation
-            loop.run_until_complete(
-                self.handle_code_execution_validation_optimized(
-                    room_id, code, execution_result, conversation_history, send_help_callback
-                )
+            # Run the validation directly
+            self.handle_code_execution_validation_optimized(
+                room_id, code, execution_result, conversation_history, send_help_callback
             )
             
         except Exception as e:
             logging.error(f"Error in optimized validation thread: {e}")
-        finally:
-            try:
-                loop.close()
-            except:
-                pass
 
     def reset_execution_tracking(self, room_id: str):
         """Reset execution tracking for a room"""
