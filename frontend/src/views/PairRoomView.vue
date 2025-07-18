@@ -69,7 +69,9 @@
                     :room-id="roomId"
                     :socket="socket"
                     :current-user-id="currentUserId"
+                    :ai-mode="currentAIMode"
                     @chat-message="handleCodeRunnerChatMessage"
+                    @send-to-personal-ai="handleCodeRunnerPersonalAI"
                 />
             </div>
 
@@ -167,6 +169,7 @@ export default defineComponent({
         const currentProblem = ref(null)
         const selectedProblem = ref(0)
         const chatSessionStarted = ref(false)
+        const currentAIMode = ref('shared') // Track current AI mode
         const { socket, connect } = useSocket()
         
         // Component refs
@@ -337,8 +340,19 @@ export default defineComponent({
             }
         }
 
+        // Handle personal AI message from CodeRunner
+        const handleCodeRunnerPersonalAI = (messageData) => {
+            console.log('🤖 Sending CodeRunner message directly to personal AI:', messageData.content)
+            
+            // Dispatch custom event that IndividualAIChat can listen to
+            window.dispatchEvent(new CustomEvent('send-to-personal-ai', { detail: messageData }))
+        }
+
         // Handle AI mode change from header toggle
         const handleAIModeChanged = (data) => {
+            // Update local AI mode tracking
+            currentAIMode.value = data.mode
+            
             // Forward the mode change to ChatContainer
             if (chatContainer.value) {
                 chatContainer.value.handleModeChanged(data)
@@ -396,6 +410,7 @@ export default defineComponent({
             currentProblem,
             selectedProblem,
             chatSessionStarted,
+            currentAIMode,
             computedExtensions: codeMirrorExtensions.computedExtensions,
             socket,
             handleReady,
@@ -427,6 +442,7 @@ export default defineComponent({
             
             // Chat handling
             handleCodeRunnerChatMessage,
+            handleCodeRunnerPersonalAI,
             handleAIModeChanged,
             handleChatSessionStateChanged,
             handleReflectionSessionStarted: reflectionSession.handleReflectionSessionStarted,

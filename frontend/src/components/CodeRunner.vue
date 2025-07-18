@@ -127,6 +127,10 @@ export default {
     currentUserId: {
       type: String,
       default: null
+    },
+    aiMode: {
+      type: String,
+      default: 'shared'
     }
   },
   
@@ -183,20 +187,34 @@ export default {
 
     requestDetailedHelp() {
       // Send a message to chat requesting detailed help with context
-      if (this.socket && this.roomId && this.aiAnalysis) {
-        const message = {
-          room: this.roomId,
-          content: `@ai I need detailed help with my code execution. Your analysis showed: "${this.aiAnalysis.message}". Can you provide specific guidance on how to address this?`,
-          username: 'User',
-          userId: this.currentUserId || 'user_' + Date.now(),
-          timestamp: new Date().toISOString()
-        };
-
-        // Emit to parent component to add to local chat
-        this.$emit('chat-message', message);
+      if (this.roomId && this.aiAnalysis) {
+        const helpContent = `I need detailed help with my code execution. Your analysis showed: "${this.aiAnalysis.message}". Can you provide specific guidance on how to address this?`;
         
-        // Send to socket for other users
-        this.socket.emit('chat_message', message);
+        if (this.aiMode === 'individual') {
+          // In individual mode, send directly to personal AI
+          this.$emit('send-to-personal-ai', {
+            content: helpContent,
+            timestamp: new Date().toISOString(),
+            isFromCodeRunner: true
+          });
+        } else {
+          // In shared mode, send to team chat with @AI mention
+          const message = {
+            room: this.roomId,
+            content: `@ai ${helpContent}`,
+            username: 'User',
+            userId: this.currentUserId || 'user_' + Date.now(),
+            timestamp: new Date().toISOString()
+          };
+
+          // Emit to parent component to add to local chat
+          this.$emit('chat-message', message);
+          
+          // Send to socket for other users
+          if (this.socket) {
+            this.socket.emit('chat_message', message);
+          }
+        }
       }
     },
 

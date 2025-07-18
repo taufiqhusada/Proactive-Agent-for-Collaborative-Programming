@@ -123,11 +123,7 @@ export default defineComponent({
       return message
     }
 
-    const sendMessage = async () => {
-      if (!newMessage.value.trim()) return
-
-      const userMessage = addMessage(newMessage.value.trim(), false)
-      newMessage.value = ''
+    const sendMessageToAI = async (messageContent) => {
       isTyping.value = true
       
       try {
@@ -140,7 +136,7 @@ export default defineComponent({
           body: JSON.stringify({
             userId: props.userId,
             roomId: props.roomId,
-            message: userMessage.content
+            message: messageContent
           })
         })
 
@@ -157,6 +153,15 @@ export default defineComponent({
       } finally {
         isTyping.value = false
       }
+    }
+
+    const sendMessage = async () => {
+      if (!newMessage.value.trim()) return
+
+      const userMessage = addMessage(newMessage.value.trim(), false)
+      newMessage.value = ''
+      
+      sendMessageToAI(userMessage.content)
     }
 
     const handleIndividualAIResponse = (data) => {
@@ -190,15 +195,31 @@ export default defineComponent({
       scrollToBottom()
     }
 
+    // Handle messages sent from CodeRunner to personal AI
+    const handleCodeRunnerMessage = (event) => {
+      console.log('🤖 IndividualAIChat: Received message from CodeRunner', event.detail)
+      const { content, timestamp, isFromCodeRunner } = event.detail
+      
+      // Add user message first (the question from CodeRunner)
+      addMessage(content, false)
+      
+      // Then send to AI for response
+      sendMessageToAI(content)
+    }
+
     // Setup lifecycle hooks
     onMounted(() => {
       // Listen for AI messages redirected from shared chat in personal mode
       window.addEventListener('ai-message-for-personal-chat', handleRedirectedAIMessage)
+      
+      // Listen for messages from CodeRunner
+      window.addEventListener('send-to-personal-ai', handleCodeRunnerMessage)
     })
 
     onUnmounted(() => {
-      // Clean up event listener
+      // Clean up event listeners
       window.removeEventListener('ai-message-for-personal-chat', handleRedirectedAIMessage)
+      window.removeEventListener('send-to-personal-ai', handleCodeRunnerMessage)
     })
 
     // No socket event handlers needed for REST API approach
