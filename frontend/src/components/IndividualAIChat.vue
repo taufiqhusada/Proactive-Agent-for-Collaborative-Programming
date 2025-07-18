@@ -229,7 +229,7 @@ export default defineComponent({
 }
 
 .chat-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
   color: white;
   padding: 1rem;
   display: flex;
@@ -294,7 +294,7 @@ export default defineComponent({
 
 .user-message {
   align-self: flex-end;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
   color: white;
 }
 
@@ -443,13 +443,13 @@ export default defineComponent({
 
 .message-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #4a5568;
   background: white;
 }
 
 .send-button {
   padding: 0.75rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -462,7 +462,7 @@ export default defineComponent({
 
 .send-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(74, 85, 104, 0.3);
 }
 
 .send-button:disabled {

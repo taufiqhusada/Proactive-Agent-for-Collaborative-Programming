@@ -2135,7 +2135,7 @@ export default defineComponent({
 }
 
 .chat-header {
-    padding: 1rem;
+    padding: 0.75rem;
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
     display: flex;
@@ -2145,7 +2145,7 @@ export default defineComponent({
 
 .chat-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: #2d3748;
     display: flex;
@@ -2212,12 +2212,12 @@ export default defineComponent({
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
     background: #10b981;
     color: white;
     border: none;
     border-radius: 8px;
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;

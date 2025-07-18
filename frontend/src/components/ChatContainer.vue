@@ -10,7 +10,11 @@
     </div>
     
     <!-- Single PairChat instance for both modes -->
-    <div :class="currentMode === 'shared' ? 'shared-mode' : 'team-chat-section'">
+    <div 
+      :class="currentMode === 'shared' ? 'shared-mode' : 'team-chat-section'" 
+      :style="teamChatStyle"
+      ref="teamChatSection"
+    >
       <PairChat 
         ref="pairChat"
         :socket="socket" 
@@ -26,8 +30,27 @@
       />
     </div>
     
+    <!-- Draggable divider (only in individual mode) -->
+    <div 
+      v-if="currentMode === 'individual'" 
+      class="chat-divider"
+      @mousedown="startDragging"
+    >
+      <div class="divider-handle">
+        <svg width="20" height="4" viewBox="0 0 20 4" fill="none">
+          <rect width="20" height="1" fill="currentColor" opacity="0.3"/>
+          <rect y="0" width="20" height="1" fill="currentColor" opacity="0.3"/>
+        </svg>
+      </div>
+    </div>
+
     <!-- Individual AI Chat (only in individual mode) -->
-    <div v-if="currentMode === 'individual'" class="ai-chat-section">
+    <div 
+      v-if="currentMode === 'individual'" 
+      class="ai-chat-section" 
+      :style="aiChatStyle"
+      ref="aiChatSection"
+    >
       <IndividualAIChat 
         ref="individualAIChat"
         :room-id="roomId"
@@ -89,9 +112,33 @@ export default defineComponent({
     const pairChat = ref(null)
     const teamChat = ref(null)
     const individualAIChat = ref(null)
+    const teamChatSection = ref(null)
+    const aiChatSection = ref(null)
+    
+    // Dragging state
+    const isDragging = ref(false)
+    const teamChatHeight = ref(40) // Percentage height for team chat - starts at 70%
 
     const isConnected = computed(() => {
       return props.socket && props.socket.connected
+    })
+
+    const teamChatStyle = computed(() => {
+      if (currentMode.value === 'individual') {
+        return {
+          height: `${teamChatHeight.value}%`
+        }
+      }
+      return {}
+    })
+
+    const aiChatStyle = computed(() => {
+      if (currentMode.value === 'individual') {
+        return {
+          height: `${100 - teamChatHeight.value}%`
+        }
+      }
+      return {}
     })
 
     const handleModeChanged = (data) => {
@@ -149,12 +196,49 @@ export default defineComponent({
       }
     }
 
+    // Dragging functionality
+    const startDragging = (e) => {
+      isDragging.value = true
+      document.addEventListener('mousemove', handleDrag)
+      document.addEventListener('mouseup', stopDragging)
+      e.preventDefault()
+    }
+
+    const handleDrag = (e) => {
+      if (!isDragging.value) return
+
+      const container = teamChatSection.value?.parentElement
+      if (!container) return
+
+      const containerRect = container.getBoundingClientRect()
+      const mouseY = e.clientY - containerRect.top
+      const containerHeight = containerRect.height
+      
+      // Calculate new percentage (allow full range 0-100%)
+      let newPercentage = (mouseY / containerHeight) * 100
+      newPercentage = Math.max(0, Math.min(80, newPercentage)) // Allow hiding either section completely
+      
+      teamChatHeight.value = newPercentage
+    }
+
+    const stopDragging = () => {
+      isDragging.value = false
+      document.removeEventListener('mousemove', handleDrag)
+      document.removeEventListener('mouseup', stopDragging)
+    }
+
     return {
       currentMode,
       pairChat,
       teamChat,
       individualAIChat,
+      teamChatSection,
+      aiChatSection,
+      teamChatHeight,
+      isDragging,
       isConnected,
+      teamChatStyle,
+      aiChatStyle,
       handleModeChanged,
       handleReflectionSessionStarted,
       handleReflectionSessionEnded,
@@ -162,7 +246,8 @@ export default defineComponent({
       startReflectionSession,
       stopReflectionSession,
       addMessage,
-      clearIndividualAIChat
+      clearIndividualAIChat,
+      startDragging
     }
   }
 })
@@ -235,16 +320,50 @@ export default defineComponent({
 }
 
 .individual-layout .team-chat-section {
-  /* Team chat takes up half the available space in individual mode */
-  flex: 0 1 50%;
-  min-height: 300px; /* Minimum readable height */
-  max-height: 50vh; /* Don't exceed half viewport */
+  /* Team chat takes up dynamic space in individual mode */
+  flex: 0 0 auto;
+  min-height: 200px; /* Minimum readable height */
+  overflow: hidden;
 }
 
 .individual-layout .ai-chat-section {
-  /* AI chat takes up the other half in individual mode */
-  flex: 0 1 50%;
-  min-height: 300px; /* Minimum readable height */
-  max-height: 50vh; /* Don't exceed half viewport */
+  /* AI chat takes up remaining space in individual mode */
+  flex: 1;
+  min-height: 200px; /* Minimum readable height */
+  overflow: hidden;
+}
+
+.chat-divider {
+  flex: 0 0 auto;
+  height: 8px;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.chat-divider:hover {
+  background: #e2e8f0;
+}
+
+.chat-divider:active {
+  background: #cbd5e0;
+}
+
+.divider-handle {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.chat-divider:hover .divider-handle {
+  color: #64748b;
 }
 </style>
