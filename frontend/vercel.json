@@ -1,6 +1,45 @@
 {
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist",
+    "framework": "vite",
+    "installCommand": "npm install",
+    "devCommand": "npm run dev",
     "rewrites": [
-        {"source": "/api/:path*", "destination": "https://tech-itv-be-00001-r8n-203526614377.us-east4.run.app/:path*"},
-        {"source": "/(.*)", "destination": "/"}
-    ]
+        {
+            "source": "/api/:path*", 
+            "destination": "https://tech-itv-be-00001-r8n-203526614377.us-east4.run.app/api/:path*"
+        },
+        {
+            "source": "/socket.io/:path*", 
+            "destination": "https://tech-itv-be-00001-r8n-203526614377.us-east4.run.app/socket.io/:path*"
+        },
+        {
+            "source": "/(.*)", 
+            "destination": "/index.html"
+        }
+    ],
+    "headers": [
+        {
+            "source": "/api/:path*",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                },
+                {
+                    "key": "Access-Control-Allow-Methods",
+                    "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                    "key": "Access-Control-Allow-Headers",
+                    "value": "Content-Type, Authorization"
+                }
+            ]
+        }
+    ],
+    "functions": {
+        "app/api/**/*.js": {
+            "maxDuration": 30
+        }
+    }
 }

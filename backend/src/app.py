@@ -487,6 +487,36 @@ def ws_toggle_reflection(data):
 def root():
     return "Hello, Remote Pair Programming!"
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """
+    Health check endpoint for monitoring and load balancers
+    """
+    try:
+        # Basic health check - you can add more sophisticated checks here
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0",
+            "service": "hhai-pair-programming-backend"
+        }
+        
+        # Optional: Add database connectivity check
+        # try:
+        #     # Add your database ping here if needed
+        #     pass
+        # except Exception as e:
+        #     health_status["database"] = "error"
+        #     health_status["database_error"] = str(e)
+        
+        return jsonify(health_status), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }), 500
+
 @app.route("/api/login", methods=["POST"])
 def login():
     """

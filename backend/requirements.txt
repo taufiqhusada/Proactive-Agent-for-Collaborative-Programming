@@ -9,3 +9,4 @@ gunicorn
 firebase_admin
 PyJWT
 Flask-SocketIO
+flask_jwt_extended
