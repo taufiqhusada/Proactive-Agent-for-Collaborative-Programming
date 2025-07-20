@@ -7,9 +7,12 @@ export function useSocket() {
   const auth = useAuth()
 
   if (!socket) {
-    // Get the WebSocket URL - fallback to current domain for production
+    // In production, connect directly to backend for WebSocket support
+    // In development, use localhost
     const wsUrl = import.meta.env.VITE_WS_URL || 
-                  (import.meta.env.PROD ? '' : 'http://localhost:5000')
+                  (import.meta.env.PROD 
+                    ? 'https://hhaipp-00001-9xb-cfnm2zc7da-uk.a.run.app' 
+                    : 'http://localhost:5000')
     
     console.log('Socket connecting to:', wsUrl)
     

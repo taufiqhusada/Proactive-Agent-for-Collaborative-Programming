@@ -6,7 +6,9 @@ interface AuthState {
   user: string | null
 }
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL })
+const api = axios.create({ 
+  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:5000')
+})
 
 export const useAuth = defineStore('auth', {
   state: (): AuthState => ({ token: null, user: null }),
