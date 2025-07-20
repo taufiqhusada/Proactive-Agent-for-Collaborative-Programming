@@ -27,7 +27,9 @@ socketio = SocketIO(
     cors_allowed_origins="*",
     logger=False,
     engineio_logger=False,
-    async_mode='threading'
+    async_mode='threading',
+    # Per Google Cloud Run docs: WebSocket only for multiple instances
+    transports=['websocket']
 )
 jwt = JWTManager(app)
 
