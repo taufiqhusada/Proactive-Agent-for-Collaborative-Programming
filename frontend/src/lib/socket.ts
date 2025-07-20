@@ -7,7 +7,13 @@ export function useSocket() {
   const auth = useAuth()
 
   if (!socket) {
-    socket = io(import.meta.env.VITE_WS_URL + '/ws', {
+    // Get the WebSocket URL - fallback to current domain for production
+    const wsUrl = import.meta.env.VITE_WS_URL || 
+                  (import.meta.env.PROD ? '' : 'http://localhost:5000')
+    
+    console.log('Socket connecting to:', wsUrl)
+    
+    socket = io(wsUrl + '/ws', {
       autoConnect: false,
       transports: ['websocket', 'polling'],
       timeout: 20000,
@@ -26,7 +32,7 @@ export function useSocket() {
   function connect() {
     socket.auth = { token: auth.token }
     if (!socket.connected) {
-      console.log('Attempting to connect to:', import.meta.env.VITE_WS_URL + '/ws')
+      console.log('Attempting to connect socket...')
       socket.connect()
     }
   }
