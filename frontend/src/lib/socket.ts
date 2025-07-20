@@ -18,9 +18,11 @@ export function useSocket() {
     
     socket = io(wsUrl + '/ws', {
       autoConnect: false,
-      transports: ['websocket', 'polling'],
-      timeout: 20000,
-      forceNew: true
+      transports: ['websocket', 'polling'], // Try WebSocket first, fallback to polling
+      timeout: 30000, // Increased timeout for Cloud Run
+      forceNew: true,
+      upgrade: true,
+      rememberUpgrade: false
     })
 
     socket.on('connect_error', (error) => {

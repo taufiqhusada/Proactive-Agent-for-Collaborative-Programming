@@ -25,11 +25,14 @@ CORS(app, supports_credentials=True)
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
-    logger=False,
-    engineio_logger=False,
-    async_mode='threading',
-    # Per Google Cloud Run docs: WebSocket only for multiple instances
-    transports=['websocket']
+    logger=True,  # Enable logging for debugging
+    engineio_logger=True,  # Enable engine.io logging
+    async_mode='eventlet',  # Use eventlet for better WebSocket support
+    # Support both transports for better compatibility
+    transports=['websocket', 'polling'],
+    # Increase timeouts for Cloud Run
+    ping_timeout=60,
+    ping_interval=25
 )
 jwt = JWTManager(app)
 

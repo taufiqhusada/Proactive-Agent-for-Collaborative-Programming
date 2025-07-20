@@ -3,18 +3,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Gunicorn configuration for Cloud Run optimization
+# Gunicorn configuration for Flask-SocketIO with eventlet
 bind = f"0.0.0.0:{os.environ.get('PORT', '8080')}"
 
-# Worker configuration for better performance
-workers = 2  # 2 CPUs = 2 workers
-worker_class = "eventlet"  # Async workers for Socket.IO
+# Worker configuration for Socket.IO
+workers = 1  # Socket.IO requires single worker with eventlet
+worker_class = "eventlet"  # Required for Socket.IO WebSocket support
 worker_connections = 100
 
 # Performance tuning
 max_requests = 1000
 max_requests_jitter = 50
-preload_app = True
 timeout = 300
 keepalive = 5
 
