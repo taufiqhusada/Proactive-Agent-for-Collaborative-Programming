@@ -7,11 +7,11 @@
     "rewrites": [
         {
             "source": "/api/:path*", 
-            "destination": "https://tech-itv-be-00001-r8n-203526614377.us-east4.run.app/api/:path*"
+            "destination": "https://hhaipp-00001-9xb-cfnm2zc7da-uk.a.run.app/api/:path*"
         },
         {
             "source": "/socket.io/:path*", 
-            "destination": "https://tech-itv-be-00001-r8n-203526614377.us-east4.run.app/socket.io/:path*"
+            "destination": "https://hhaipp-00001-9xb-cfnm2zc7da-uk.a.run.app/socket.io/:path*"
         },
         {
             "source": "/(.*)", 
