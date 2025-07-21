@@ -9,6 +9,7 @@
       >
         <option value="shared">🤝 Shared AI</option>
         <option value="individual">👤 Personal AI</option>
+        <option value="none">🚫 No AI</option>
       </select>
       <div class="dropdown-icon">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -55,7 +56,7 @@ export default defineComponent({
 
     const handleModeChange = () => {
       if (sessionStarted.value) {
-        console.warn('Cannot change AI mode during active session')
+        console.warn('Cannot change AI mode during active session - refresh page to unlock')
         // Revert to current mode
         currentMode.value = aiModeService.getCurrentMode()
         return

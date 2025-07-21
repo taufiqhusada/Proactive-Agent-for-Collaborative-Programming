@@ -3,7 +3,7 @@
         <div class="chat-header">
             <h6 class="chat-title">
                 <span class="chat-icon">💬</span>
-                {{ individualMode ? 'Team Chat (Human Only)' : 'Team Chat' }}
+                {{ getChatTitle() }}
             </h6>
             <div class="header-controls">
                 <div class="online-users">
@@ -96,8 +96,8 @@
 
         <div class="chat-input">
             <div class="input-wrapper">
-                <!-- @AI Mention Button -->
-                <div v-if="!individualMode" class="ai-mention-controls">
+                <!-- @AI Mention Button (hidden in individual and no-AI modes) -->
+                <div v-if="!individualMode && !noAiMode" class="ai-mention-controls">
                     <button 
                         @click="toggleAIMention"
                         :class="['ai-mention-btn', { active: hasAIMention }]"
@@ -229,6 +229,14 @@ export default defineComponent({
         individualMode: {
             type: Boolean,
             default: false
+        },
+        noAiMode: {
+            type: Boolean,
+            default: false
+        },
+        currentProblem: {
+            type: Object,
+            default: null
         }
     },
     emits: ['reflection-session-started', 'reflection-session-ended', 'session-state-changed'],
@@ -300,6 +308,17 @@ export default defineComponent({
                     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
                 }
             })
+        }
+
+        // Get chat title based on current mode
+        const getChatTitle = () => {
+            if (props.noAiMode) {
+                return 'Team Chat (No AI)'
+            } else if (props.individualMode) {
+                return 'Team Chat (Human Only)'
+            } else {
+                return 'Team Chat'
+            }
         }
 
         // Chat typing detection functions
@@ -1303,8 +1322,8 @@ export default defineComponent({
                 ttsSupported.value = true
                 console.log('High-quality audio playback supported')
                 
-                // Initialize PCM audio context for real-time streaming
-                await initializePCMAudio()
+                // Don't initialize PCM audio context immediately to avoid autoplay policy warning
+                // It will be initialized when actually needed (on first audio playback)
             } else {
                 ttsSupported.value = false
                 console.log('High-quality audio playback not supported')
@@ -1870,6 +1889,23 @@ export default defineComponent({
             sessionStarted.value = true
             emit('session-state-changed', { sessionStarted: true })
             
+            // Send problem context to backend first, before starting the session
+            if (props.currentProblem) {
+                console.log('📋 Sending problem context to AI agent:', props.currentProblem.title)
+                props.socket.emit('problem_update', {
+                    room: props.roomId,
+                    problemTitle: props.currentProblem.title,
+                    problemDescription: props.currentProblem.description + 
+                        (props.currentProblem.examples ? '\n\nExamples:\n' + 
+                        props.currentProblem.examples.map((ex, i) => 
+                            `Example ${i+1}:\nInput: ${ex.input}\nOutput: ${ex.output}` + 
+                            (ex.explanation ? `\nExplanation: ${ex.explanation}` : '')
+                        ).join('\n\n') : '') +
+                        (props.currentProblem.constraints ? '\n\nConstraints:\n' + 
+                        props.currentProblem.constraints.join('\n') : '')
+                })
+            }
+            
             try {
                 // Call backend API to start session and send Bob greeting
                 const response = await fetch('/api/start-session', {
@@ -2105,6 +2141,7 @@ export default defineComponent({
             showResetWarning,
             showSuccessPopup,
             hasAIMention,
+            getChatTitle,
             formatTime,
             sendMessage,
             addMessage,

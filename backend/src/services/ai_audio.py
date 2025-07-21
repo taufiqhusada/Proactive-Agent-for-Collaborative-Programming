@@ -100,6 +100,9 @@ class AIAudioService:
                                 chunk_base64 = base64.b64encode(chunk).decode('utf-8')
                                 chunks_sent.append(chunk_number)
                                 
+                                # Log concise chunk info
+                                print(f"🎵 Audio chunk {chunk_number} sent ({len(chunk)} bytes) to room {room_id}")
+                                
                                 # Send chunk immediately as it arrives from OpenAI
                                 self.socketio.emit('ai_audio_chunk', {
                                     'messageId': message_id,
@@ -115,6 +118,7 @@ class AIAudioService:
                         # Send a special "final chunk" marker
                         if chunks_sent:
                             final_chunk_number = chunks_sent[-1]
+                            print(f"🎵 Audio stream completed - {len(chunks_sent)} chunks sent ({total_bytes_sent} total bytes)")
                             
                             # Send a special "final chunk" marker
                             self.socketio.emit('ai_audio_chunk', {
@@ -192,6 +196,8 @@ class AIAudioService:
             # Convert to base64 and send as single chunk
             audio_data = response.content
             chunk_base64 = base64.b64encode(audio_data).decode('utf-8')
+            
+            print(f"🎵 MP3 audio generated ({len(audio_data)} bytes) for room {room_id}")
             
             # Send the complete audio as one chunk
             self.socketio.emit('ai_audio_chunk', {

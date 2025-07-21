@@ -25,9 +25,10 @@ CORS(app, supports_credentials=True)
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
-    logger=True,  # Enable logging for debugging
-    engineio_logger=True,  # Enable engine.io logging
-    async_mode='eventlet',  # Use eventlet for better WebSocket support
+    logger=False,  # Disable verbose logging
+    engineio_logger=False,  # Disable engine.io detailed logging
+    # async_mode="threading",  # Use threading instead of eventlet in local development
+    async_mode="eventlet", # this is for GCP deployment
     # Support both transports for better compatibility
     transports=['websocket', 'polling'],
     # Increase timeouts for Cloud Run
@@ -72,7 +73,7 @@ class ConnectionManager:
         return self.room_state.get(room, {"code": 'print("Hello")', "language": "python"})
 
     def set_session_started(self, room: str, started: bool):
-        """Set session started state and lock AI mode if starting"""
+        """Set session started state without locking AI mode"""
         if room not in self.session_states:
             self.session_states[room] = {
                 'started': False,
@@ -80,7 +81,7 @@ class ConnectionManager:
                 'locked': False
             }
         self.session_states[room]['started'] = started
-        self.session_states[room]['locked'] = started  # Lock mode when session starts
+        # Remove AI mode locking - users can change mode anytime
         
     def is_session_started(self, room: str):
         """Check if session is started for a room"""
@@ -91,17 +92,19 @@ class ConnectionManager:
         return self.session_states.get(room, {}).get('locked', False)
         
     def set_ai_mode(self, room: str, mode: str):
-        """Set AI mode for a room if not locked"""
+        """Set AI mode for a room - always allowed"""
         if room not in self.session_states:
             self.session_states[room] = {
                 'started': False,
                 'ai_mode': 'shared',
                 'locked': False
             }
-        if not self.session_states[room]['locked']:
-            self.session_states[room]['ai_mode'] = mode
-            return True
-        return False
+        self.session_states[room]['ai_mode'] = mode
+        return True  # Always successful
+    
+    def get_ai_mode(self, room: str):
+        """Get the current AI mode for a room"""
+        return self.session_states.get(room, {}).get('ai_mode', 'shared')
 
     def set_room_state(self, room: str, code: str, language: str = "python"):
         self.room_state[room] = {"code": code, "language": language}
@@ -248,13 +251,20 @@ def ws_chat_message(data):
     include_self = data.get('isSystem', False)
     emit("chat_message", data, room=room, include_self=include_self)
     
-    # Process message with AI agent in a separate thread
-    def process_ai_message():
-        print(f"🤖 Processing AI message for room {room}")
-        ai_agent.process_message_sync(data)
-        print(f"🤖 AI message processing completed for room {room}")
+    # Check AI mode before processing with AI agent
+    current_ai_mode = manager.get_ai_mode(room)
     
-    threading.Thread(target=process_ai_message, daemon=True).start()
+    # Only process with AI if not in 'none' mode
+    if current_ai_mode != 'none':
+        # Process message with AI agent in a separate thread
+        def process_ai_message():
+            print(f"🤖 Processing AI message for room {room} (mode: {current_ai_mode})")
+            ai_agent.process_message_sync(data)
+            print(f"🤖 AI message processing completed for room {room}")
+        
+        threading.Thread(target=process_ai_message, daemon=True).start()
+    else:
+        print(f"🚫 Skipping AI processing for room {room} - AI mode is 'none'")
 
 @socketio.on("ai_mode_changed", namespace="/ws")
 def ws_ai_mode_changed(data):
@@ -264,30 +274,16 @@ def ws_ai_mode_changed(data):
     print(f"🔄 AI mode change requested to {data['mode']} by user {data['changedBy']} in room {data['roomId']}")
     room = data["roomId"]
     
-    # Check if AI mode is locked (session started)
-    if manager.is_ai_mode_locked(room):
-        print(f"🔒 AI mode is locked for room {room} - session already started")
-        emit("ai_mode_change_rejected", {
-            "error": "Cannot change AI mode during active session",
-            "reason": "Session already started"
-        })
-        return
+    # Set the AI mode (always allowed now)
+    manager.set_ai_mode(room, data["mode"])
     
-    # Try to set the AI mode
-    if manager.set_ai_mode(room, data["mode"]):
-        # Broadcast the mode change to all users in the room (including sender for confirmation)
-        emit("ai_mode_changed", {
-            "mode": data["mode"],
-            "changedBy": data["changedBy"]
-        }, room=room)
-        
-        print(f"📡 AI mode change to {data['mode']} accepted and broadcasted to room {room}")
-    else:
-        print(f"� AI mode change rejected for room {room} - mode is locked")
-        emit("ai_mode_change_rejected", {
-            "error": "Cannot change AI mode during active session",
-            "reason": "Mode is locked"
-        })
+    # Broadcast the mode change to all users in the room (including sender for confirmation)
+    emit("ai_mode_changed", {
+        "mode": data["mode"],
+        "changedBy": data["changedBy"]
+    }, room=room)
+    
+    print(f"📡 AI mode change to {data['mode']} accepted and broadcasted to room {room}")
 
 @socketio.on("problem_update", namespace="/ws")
 def ws_problem_update(data):
@@ -556,6 +552,23 @@ def individual_ai_chat():
             return jsonify({
                 "error": "Missing required fields: userId, roomId, message"
             }), 400
+        
+        # Check AI mode for the room
+        current_ai_mode = manager.get_ai_mode(room_id)
+        if current_ai_mode == 'none':
+            print(f"🚫 Individual AI disabled - AI mode is 'none' for room {room_id}")
+            return jsonify({
+                "error": "AI assistance is disabled for this room",
+                "aiModeDisabled": True
+            }), 403
+        
+        if current_ai_mode != 'individual':
+            print(f"🚫 Individual AI not available - AI mode is '{current_ai_mode}' for room {room_id}")
+            return jsonify({
+                "error": "Individual AI mode is not active for this room",
+                "wrongMode": True,
+                "currentMode": current_ai_mode
+            }), 403
         
         # Get AI response synchronously
         ai_response = individual_ai_service.handle_individual_message_sync(
@@ -913,10 +926,25 @@ def generate_scaffolding():
         code = data.get('code', '')
         language = data.get('language', 'python')
         cursor_line = data.get('cursorLine', 0)
+        room_id = data.get('roomId')
         
         print(f"🏗️  Scaffolding Request:")
         print(f"  Language: {language}")
         print(f"  Cursor Line: {cursor_line}")
+        print(f"  Room ID: {room_id}")
+        
+        # Check AI mode if room_id is provided
+        if room_id:
+            current_ai_mode = manager.get_ai_mode(room_id)
+            if current_ai_mode == 'none':
+                print(f"🚫 Scaffolding disabled - AI mode is 'none' for room {room_id}")
+                return jsonify({
+                    'hasScaffolding': False,
+                    'message': 'Scaffolding disabled - No AI mode is active'
+                })
+            print(f"✅ Scaffolding allowed - AI mode is '{current_ai_mode}' for room {room_id}")
+        else:
+            print("⚠️ No room ID provided, proceeding with scaffolding")
         
         # Clean up expired locks first
         cleanup_expired_scaffolding_locks()
@@ -1015,14 +1043,20 @@ def start_session():
         # Mark session as started and lock AI mode
         manager.set_session_started(room_id, True)
         
-        # Send Bob greeting for session start
-        ai_agent.send_session_start_greeting(room_id)
+        # Send Bob greeting for session start only if AI is enabled
+        current_ai_mode = manager.get_ai_mode(room_id)
+        if current_ai_mode != 'none':
+            ai_agent.send_session_start_greeting(room_id)
+            print(f"🤖 AI greeting sent for mode: {current_ai_mode}")
+        else:
+            print(f"🚫 Skipping AI greeting - AI mode is 'none'")
         
         # Broadcast session started to all users in the room
         socketio.emit('session_state_changed', {
             'action': 'session_started',
             'room': room_id,
-            'message': 'Session started'
+            'message': 'Session started',
+            'ai_mode': current_ai_mode
         }, room=room_id, namespace='/ws')
         
         return jsonify({

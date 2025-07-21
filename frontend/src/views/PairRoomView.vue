@@ -85,6 +85,7 @@
                     :username="auth?.user || 'Guest'"
                     :reflection-session-id="reflectionSessionId"
                     :show-reflection-session="showReflectionSession"
+                    :current-problem="currentProblem"
                     @reflection-session-started="handleReflectionSessionStarted"
                     @reflection-session-ended="handleReflectionSessionEnded"
                     @start-reflection="startReflectionSession"

@@ -6,7 +6,8 @@
 
 export enum AIMode {
   SHARED = 'shared',
-  INDIVIDUAL = 'individual'
+  INDIVIDUAL = 'individual',
+  NONE = 'none'
 }
 
 export interface AIModeSettings {
@@ -35,9 +36,9 @@ export class AIModeService {
   }
 
   setMode(mode: AIMode, roomId: string, userId: string, broadcast: boolean = true): void {
-    // Don't allow mode changes during active session
+    // Only prevent mode changes during active session for user-initiated changes
     if (this.sessionStarted && broadcast) {
-      console.warn('Cannot change AI mode during active session');
+      console.warn('Cannot change AI mode during active session - refresh page to unlock');
       return;
     }
 
@@ -70,9 +71,16 @@ export class AIModeService {
     return this.currentMode === AIMode.INDIVIDUAL;
   }
 
+  isNoneMode(): boolean {
+    return this.currentMode === AIMode.NONE;
+  }
+
   getAIChannelName(): string {
     if (this.isIndividualMode()) {
       return `ai_individual_${this.userId}`;
+    }
+    if (this.isNoneMode()) {
+      return 'no_ai'; // Channel that doesn't exist for AI disabled mode
     }
     return `ai_shared_${this.roomId}`;
   }

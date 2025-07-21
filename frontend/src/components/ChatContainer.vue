@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-container" :class="{ 'individual-layout': currentMode === 'individual' }">
+  <div class="chat-container" :class="{ 
+    'individual-layout': currentMode === 'individual',
+    'no-ai-layout': currentMode === 'none'
+  }">
     <!-- AI Status Section (only in shared mode) -->
     <div v-if="currentMode === 'shared'" class="ai-status-section">
       <AIAgentStatus 
@@ -9,9 +12,13 @@
       />
     </div>
     
-    <!-- Single PairChat instance for both modes -->
+    <!-- Single PairChat instance for all modes -->
     <div 
-      :class="currentMode === 'shared' ? 'shared-mode' : 'team-chat-section'" 
+      :class="{
+        'shared-mode': currentMode === 'shared',
+        'team-chat-section': currentMode === 'individual',
+        'no-ai-mode': currentMode === 'none'
+      }"
       :style="teamChatStyle"
       ref="teamChatSection"
     >
@@ -22,7 +29,9 @@
         :current-user-id="currentUserId"
         :username="username"
         :individual-mode="currentMode === 'individual'"
+        :no-ai-mode="currentMode === 'none'"
         :reflection-session-id="reflectionSessionId" 
+        :current-problem="currentProblem"
         @reflection-session-started="handleReflectionSessionStarted"
         @reflection-session-ended="handleReflectionSessionEnded"
         @session-state-changed="handleSessionStateChanged"
@@ -98,6 +107,10 @@ export default defineComponent({
     showReflectionSession: {
       type: Boolean,
       default: false
+    },
+    currentProblem: {
+      type: Object,
+      default: null
     }
   },
   emits: [
@@ -365,5 +378,19 @@ export default defineComponent({
 
 .chat-divider:hover .divider-handle {
   color: #64748b;
+}
+
+/* No AI mode styles */
+.chat-container.no-ai-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-container.no-ai-layout .no-ai-mode {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 </style>

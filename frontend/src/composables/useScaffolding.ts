@@ -139,7 +139,8 @@ export function useScaffolding(code: any, selectedLanguage: any, socket: any, ro
         body: JSON.stringify({
           code: code,
           language: selectedLanguage.value,
-          cursorLine: cursorLine
+          cursorLine: cursorLine,
+          roomId: roomId?.value || null // Include room ID for AI mode checking
         })
       })
       
