@@ -155,31 +155,43 @@ class AICodeAnalysisService:
 
                 {problem_info}
 
-                IMPORTANT: Provide ONE consolidated issue that covers all problems found.
-                Be concise and educational - focus on learning.
+                IMPORTANT: Focus on functional correctness, logic, and learning opportunities.
+                DO NOT comment on:
+                - Naming conventions (camelCase vs snake_case is fine)
+                - Missing comments (code can be self-explanatory)
+                - Code style preferences (spacing, formatting)
+                - Code organization preferences
 
-                Analyze for:
+                Analyze for learning purposes:
                 1. **Undefined Variables**: Variables used but not defined
-                2. **Logic Errors**: Algorithm mistakes, wrong loop bounds  
-                3. **Performance**: Inefficient approaches
-                4. **Bug Risks**: Index errors, type issues
+                2. **Logic Errors**: Algorithm mistakes, wrong loop bounds, incorrect conditions
+                3. **Syntax Errors**: Missing parentheses, colons, indentation errors
+                4. **Runtime Errors**: Index out of bounds, division by zero, type errors
+                5. **Algorithm Optimization**: Inefficient approaches, better algorithms available
+                6. **Learning Opportunities**: Algorithmic improvements
 
-                Combine multiple problems into ONE educational message.
+                If the code is functionally correct and reasonably efficient, respond with positive feedback.
 
                 Format as JSON:
                 {{
                 "issue": {{
-                    "title": "Brief title covering main problem(s)",
-                    "description": "Concise explanation of what's wrong (1-2 sentences)",
-                    "hint": "Quick practical solution (1-2 sentences)"
+                    "title": "Brief title covering main problem(s) or 'Code looks good!'",
+                    "description": "Concise explanation of what's wrong OR positive feedback (1-2 sentences)",
+                    "hint": "Quick practical solution OR encouragement (1-2 sentences)"
                 }}
                 }}
 
-                If code is perfect, return: {{"issue": null}}
+                If code is good, return positive feedback like:
+                {{"issue": {{"title": "Code looks good!", "description": "Your solution is working correctly and follows good algorithmic practices.", "hint": "Great work! This approach should solve the problem effectively."}}}}
 
-                Examples:
-                - "Undefined Variables: Using 'n' and 'm' without defining them. Hint: Use len(arr) instead."
-                - "Inefficient Algorithm: O(n²) nested loops. Hint: Try hash map for O(n) solution."
+                Examples of VALID issues:
+                - "Optimization Opportunity: O(n²) nested loops could be O(n) with hash map. Hint: Store seen values for faster lookup."
+                - "Logic Error: Loop condition 'i <= len(arr)' causes index error. Hint: Use 'i < len(arr)'."
+                
+                Examples of INVALID issues (DO NOT report):
+                - Variable naming conventions
+                - Missing comments
+                - Code formatting/style
                 """
 
     def _parse_code_analysis(self, analysis_text: str, code: str, context: Dict[str, Any], 
@@ -199,6 +211,31 @@ class AICodeAnalysisService:
                 if issue_data is None:
                     # No issues found
                     return {'issues': []}
+                
+                # Check if this is positive feedback (code is good)
+                title = issue_data.get('title', '').lower()
+                is_positive_feedback = any(phrase in title for phrase in [
+                    'code looks good', 'good', 'great', 'excellent', 'well done', 
+                    'correct', 'nice', 'perfect', 'solid'
+                ])
+                
+                if is_positive_feedback:
+                    # For positive feedback, create a success-type entry
+                    positive_feedback = {
+                        'id': f"feedback_{hash(issue_data.get('title', 'good'))}",
+                        'type': 'Success',
+                        'severity': 'info',
+                        'title': issue_data.get('title', 'Code looks good!'),
+                        'description': issue_data.get('description', 'Your code is working well!'),
+                        'line': context.get('cursorLine', 1),
+                        'codeSnippet': code.split('\n')[0] if code else '',
+                        'suggestedFix': {
+                            'description': issue_data.get('hint', 'Keep up the great work!'),
+                            'code': '',
+                            'explanation': issue_data.get('hint', 'Continue with this approach!')
+                        }
+                    }
+                    return {'issues': [positive_feedback]}
                 
                 # Convert single issue to array format for frontend
                 single_issue = {

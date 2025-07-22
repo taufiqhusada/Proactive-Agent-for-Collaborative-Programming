@@ -70,131 +70,37 @@ export default defineComponent({
 
         const problems = ref([
             {
-                title: "Two Sum",
+                title: "0. First Repeated Number",
                 difficulty: "Easy",
                 description: `
-                    <p>Given an array of integers <code>nums</code> and an integer <code>target</code>, return <em>indices of the two numbers such that they add up to <code>target</code></em>.</p>
-                    <p>You may assume that each input would have <strong>exactly one solution</strong>, and you may not use the same element twice.</p>
-                    <p>You can return the answer in any order.</p>
+                    <p>Given a list of integers, return the first number that appears more than once.</p>
+                    <p>If no number repeats, return <code>None</code>.</p>
+                    <p>This is an introductory problem to get familiar with the coding environment.</p>
                 `,
                 examples: [
                     {
-                        input: "nums = [2,7,11,15], target = 9",
-                        output: "[0,1]",
-                        explanation: "Because nums[0] + nums[1] == 9, we return [0, 1]."
+                        input: "nums = [2, 5, 3, 2, 8, 7]",
+                        output: "2",
+                        explanation: "2 is the first number that appears more than once."
                     },
                     {
-                        input: "nums = [3,2,4], target = 6",
-                        output: "[1,2]",
-                        explanation: ""
+                        input: "nums = [1, 2, 3, 4, 5]",
+                        output: "None",
+                        explanation: "No number repeats in the list."
                     },
                     {
-                        input: "nums = [3,3], target = 6",
-                        output: "[0,1]",
-                        explanation: ""
+                        input: "nums = [5, 3, 4, 3, 5, 6]",
+                        output: "3",
+                        explanation: "Both 3 and 5 repeat, but 3 appears twice first."
                     }
                 ],
                 constraints: [
-                    "2 ≤ nums.length ≤ 10⁴",
-                    "-10⁹ ≤ nums[i] ≤ 10⁹",
-                    "-10⁹ ≤ target ≤ 10⁹",
-                    "Only one valid answer exists."
+                    "1 ≤ nums.length ≤ 10⁴",
+                    "-10⁶ ≤ nums[i] ≤ 10⁶"
                 ]
             },
-            // {
-            //     title: "Add Two Numbers",
-            //     difficulty: "Medium",
-            //     description: `
-            //         <p>You are given two <strong>non-empty</strong> linked lists representing two non-negative integers. The digits are stored in <strong>reverse order</strong>, and each of their nodes contains a single digit. Add the two numbers and return the sum as a linked list.</p>
-            //         <p>You may assume the two numbers do not contain any leading zero, except the number 0 itself.</p>
-            //     `,
-            //     examples: [
-            //         {
-            //             input: "l1 = [2,4,3], l2 = [5,6,4]",
-            //             output: "[7,0,8]",
-            //             explanation: "342 + 465 = 807."
-            //         },
-            //         {
-            //             input: "l1 = [0], l2 = [0]",
-            //             output: "[0]",
-            //             explanation: ""
-            //         },
-            //         {
-            //             input: "l1 = [9,9,9,9,9,9,9], l2 = [9,9,9,9]",
-            //             output: "[8,9,9,9,0,0,0,1]",
-            //             explanation: ""
-            //         }
-            //     ],
-            //     constraints: [
-            //         "The number of nodes in each linked list is in the range [1, 100].",
-            //         "0 ≤ Node.val ≤ 9",
-            //         "It is guaranteed that the list represents a number that does not have leading zeros."
-            //     ]
-            // },
-            // {
-            //     title: "Longest Substring Without Repeating Characters",
-            //     difficulty: "Medium",
-            //     description: `
-            //         <p>Given a string <code>s</code>, find the length of the <strong>longest substring</strong> without repeating characters.</p>
-            //     `,
-            //     examples: [
-            //         {
-            //             input: 's = "abcabcbb"',
-            //             output: "3",
-            //             explanation: 'The answer is "abc", with the length of 3.'
-            //         },
-            //         {
-            //             input: 's = "bbbbb"',
-            //             output: "1",
-            //             explanation: 'The answer is "b", with the length of 1.'
-            //         },
-            //         {
-            //             input: 's = "pwwkew"',
-            //             output: "3",
-            //             explanation: 'The answer is "wke", with the length of 3.'
-            //         }
-            //     ],
-            //     constraints: [
-            //         "0 ≤ s.length ≤ 5 × 10⁴",
-            //         "s consists of English letters, digits, symbols and spaces."
-            //     ]
-            // },
-            // {
-            //     title: "Valid Parentheses",
-            //     difficulty: "Easy",
-            //     description: `
-            //         <p>Given a string <code>s</code> containing just the characters <code>'('</code>, <code>')'</code>, <code>'{'</code>, <code>'}'</code>, <code>'['</code> and <code>']'</code>, determine if the input string is valid.</p>
-            //         <p>An input string is valid if:</p>
-            //         <ol>
-            //             <li>Open brackets must be closed by the same type of brackets.</li>
-            //             <li>Open brackets must be closed in the correct order.</li>
-            //             <li>Every close bracket has a corresponding open bracket of the same type.</li>
-            //         </ol>
-            //     `,
-            //     examples: [
-            //         {
-            //             input: 's = "()"',
-            //             output: "true",
-            //             explanation: ""
-            //         },
-            //         {
-            //             input: 's = "()[]{}"',
-            //             output: "true",
-            //             explanation: ""
-            //         },
-            //         {
-            //             input: 's = "(]"',
-            //             output: "false",
-            //             explanation: ""
-            //         }
-            //     ],
-            //     constraints: [
-            //         "1 ≤ s.length ≤ 10⁴",
-            //         "s consists of parentheses only '()[]{}'."
-            //     ]
-            // },
             {
-                title: "Gift Card Purchase Assistant",
+                title: "1. Gift Card Purchase Assistant",
                 difficulty: "Easy",
                 description: `
                     <p><strong>Scenario:</strong> A user has a gift card with a fixed value (e.g., $100) and wants to buy two items from their shopping cart whose prices add up exactly to the gift card value.</p>
@@ -227,13 +133,83 @@ export default defineComponent({
                     "1 ≤ prices[i] ≤ 10⁴",
                     "All prices are positive integers.",
                 ]
+            },
+            {
+                title: "2. Step Tracker Insight",
+                difficulty: "Medium",
+                description: `
+                    <p><strong>Scenario:</strong> A fitness tracking app that tracks user daily step counts in an array.</p>
+                    <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
+                    <ul>
+                        <li><strong>Subtask 1 - Daily Average:</strong> Calculate the overall average steps per day across all recorded days.</li>
+                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within k consecutive days.</li>
+                        <li><strong>Subtask 3 - Goal Achievement Streak:</strong> Find the shortest consecutive days needed to reach or exceed a target step sum.</li>
+                    </ul>
+                `,
+                examples: [
+                    {
+                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000]",
+                        output: "10142.86",
+                        explanation: "Sum of all steps (71000) divided by number of days (7)."
+                    },
+                    {
+                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], k = 3",
+                        output: "11666.67",
+                        explanation: "Best 3-day average is from days with steps [15000, 9000, 11000] gives 11666.67."
+                    },
+                    {
+                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], target = 31000",
+                        output: "3",
+                        explanation: "Shortest subarray with sum ≥ 31000 is [10000, 6000, 15000] with length 3 and sum 31000."
+                    }
+                ],
+                constraints: [
+                    "1 ≤ steps.length ≤ 10⁴",
+                    "1 ≤ steps[i] ≤ 10⁵",
+                    "1 ≤ k ≤ steps.length",
+                    "1 ≤ target ≤ 10⁵"
+                ]
+            },
+            {
+                title: "3. Meeting Room Scheduler",
+                difficulty: "Medium",
+                description: `
+                    <p><strong>Scenario:</strong> A meeting room booking system that manages time slots for conference rooms. Each booking is represented as an interval [start_time, end_time].</p>
+                    <p>Implement a Meeting Room Scheduler that optimizes room usage by merging overlapping bookings.</p>
+                    <ul>
+                        <li><strong>Subtask 1 - Sort Bookings:</strong> Sort all meeting intervals by their start time.</li>
+                        <li><strong>Subtask 2 - Merge Overlapping:</strong> Merge all overlapping or adjacent meeting intervals.</li>
+                        <li><strong>Subtask 3 - Add New Meeting:</strong> Insert a new meeting interval and merge with existing bookings as needed.</li>
+                    </ul>
+                `,
+                examples: [
+                    {
+                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]",
+                        output: "[[1,3],[2,5],[4,7],[9,14],[15,18]]",
+                        explanation: "Intervals sorted by start time."
+                    },
+                    {
+                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]",
+                        output: "[[1,7],[9,14],[15,18]]",
+                        explanation: "After merging: [1,3], [2,5], and [4,7] all overlap and merge to [1,7]. [9,14] and [15,18] remain separate."
+                    },
+                    {
+                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]], new_interval = [8,16]",
+                        output: "[[1,7],[8,18]]",
+                        explanation: "Added [8,16], which bridges [9,14] and [15,18] to create [8,18], while [1,7] remains separate."
+                    }
+                ],
+                constraints: [
+                    "0 ≤ intervals.length ≤ 10⁴",
+                    "intervals[i].length == 2",
+                    "0 ≤ start_i ≤ end_i ≤ 10⁴",
+                    "0 ≤ new_interval[0] ≤ new_interval[1] ≤ 10⁴"
+                ]
             }
         ])
 
         // Boilerplate code for Gift Card Purchase Assistant (Python)
-        const giftCardBoilerplate = `# Gift Card Purchase Assistant
-
-prices = [40, 60, 20, 80, 90]
+        const giftCardBoilerplate = `prices = [40, 60, 20, 80, 90]
 gift_card = 100
 
 def find_all_pairs(prices, gift_card):
@@ -254,12 +230,67 @@ print(find_highest_pair(prices, gift_card))
 print(suggest_pair(prices, gift_card, 1))
                 `;
 
+        // Boilerplate code for Step Tracker Insight (Python)
+        const stepTrackerBoilerplate = `steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000]
+k = 3
+target = 30000
+
+def daily_average(steps):
+
+  return 0.0
+
+def best_k_day_streak(steps, k):
+
+  return 0.0
+
+def shortest_perfect_goal_streak(steps, target):
+
+  return 0
+
+# Example usage:
+print(f"Daily average: {daily_average(steps)}")
+print(f"Best {k}-day streak average: {best_k_day_streak(steps, k)}")
+print(f"Shortest streak to reach {target}: {shortest_perfect_goal_streak(steps, target)}")
+                `;
+
+        // Boilerplate code for Meeting Room Scheduler (Python)
+        const meetingRoomBoilerplate = `intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]
+new_interval = [8,16]
+
+def sort_intervals(intervals):
+
+  return []
+
+def merge_intervals(intervals):
+
+  return []
+
+def insert_and_merge(intervals, new_interval):
+
+  return []
+
+# Example usage:
+print(f"Sorted intervals: {sort_intervals(intervals)}")
+print(f"Merged intervals: {merge_intervals(intervals)}")
+print(f"After inserting {new_interval}: {insert_and_merge(intervals, new_interval)}")
+                `;
+
+        // Boilerplate code for First Repeated Number (Python)
+        const firstRepeatedBoilerplate = `nums = [2, 5, 3, 2, 8, 7]
+
+def first_repeated_number(nums):
+    
+  return None
+
+# Example usage:
+print(first_repeated_number(nums))
+                `;
+
         const problemBoilerplates = [
-            null, // Two Sum
-            // null, // Add Two Numbers
-            // null, // Longest Substring Without Repeating Characters
-            // null, // Valid Parentheses
-            giftCardBoilerplate // Gift Card Purchase Assistant
+            firstRepeatedBoilerplate, // First Repeated Number
+            giftCardBoilerplate, // Gift Card Purchase Assistant
+            stepTrackerBoilerplate, // Step Tracker Insight
+            meetingRoomBoilerplate // Meeting Room Scheduler
         ];
 
         const currentProblem = computed(() => problems.value[selectedProblem.value])
