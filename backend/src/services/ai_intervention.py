@@ -2,6 +2,7 @@
 AI Intervention Service - Handles timer management and intervention scheduling
 """
 
+import asyncio
 import threading
 import time
 from datetime import datetime
@@ -27,9 +28,13 @@ class AIInterventionService:
         # Simple timer tracking
         self.pending_timers: Dict[str, threading.Timer] = {}  # room_id -> threading.Timer
         
+        # Progress tracking - single 30s timer per room
+        self.progress_timers: Dict[str, threading.Timer] = {}  # room_id -> threading.Timer
+        
         # Timing parameters
         self.response_cooldown = 15  # Minimum seconds between AI responses
         self.min_messages_before_response = 3  # Wait for at least 3 messages before responding
+        self.progress_check_interval = 30  # Check progress after 30 seconds of activity
 
     def _cancel_pending_intervention(self, room_id: str, reason: str):
         """Cancel any pending timer for a room"""
@@ -183,3 +188,77 @@ class AIInterventionService:
     def cleanup_room(self, room_id: str):
         """Clean up all timers for a room"""
         self._cancel_pending_intervention(room_id, "room cleanup")
+        self._cancel_progress_timer(room_id, "room cleanup")
+    
+    # Progress tracking methods
+    def trigger_progress_check(self, room_id: str):
+        """Trigger 30-second progress check timer on new message"""
+        # If already running, don't create new timer
+        if room_id in self.progress_timers:
+            print(f"📊 Progress timer already running for room {room_id}, keeping existing")
+            return
+            
+        print(f"📊 Starting 30-second progress check timer for room {room_id}")
+        
+        def progress_check_callback():
+            """Handle 30-second progress check"""
+            try:
+                print(f"📊 30-second progress check triggered for room {room_id}")
+                
+                # Clean up timer reference
+                self.progress_timers.pop(room_id, None)
+                
+                # Get conversation history
+                conversation_history = self.get_conversation_history_callback()
+                context = conversation_history.get(room_id)
+                
+                if not context or len(context.messages) < 3:
+                    print(f"📊 Progress check skipped for room {room_id}: Not enough activity")
+                    return
+                
+                # Check cooldown to avoid spam
+                if context.last_ai_response:
+                    time_since_last = datetime.now() - context.last_ai_response
+                    if time_since_last.total_seconds() < self.response_cooldown:
+                        print(f"📊 Progress check skipped for room {room_id}: Cooldown active")
+                        return
+                
+                # Use specialized AI decision for progress tracking
+                should_intervene, message = self.ai_decision_callback(room_id, is_progress_check=True)
+                
+                if should_intervene and message:
+                    print(f"📊 Progress intervention needed for room {room_id}: {message[:50]}...")
+                    self.send_message_callback(room_id, message)
+                else:
+                    print(f"📊 Progress check: Users on track in room {room_id}")
+                    
+            except Exception as e:
+                print(f"❌ Error in progress check for room {room_id}: {e}")
+        
+        # Create and start 30-second timer
+        timer = threading.Timer(self.progress_check_interval, progress_check_callback)
+        timer.daemon = True
+        timer.start()
+        
+        # Store timer reference
+        self.progress_timers[room_id] = timer
+    
+    def _cancel_progress_timer(self, room_id: str, reason: str):
+        """Cancel any pending progress timer for a room"""
+        if room_id in self.progress_timers:
+            timer = self.progress_timers[room_id]
+            timer.cancel()
+            del self.progress_timers[room_id]
+            print(f"🚫 CANCELLED progress timer ({reason}) in room {room_id}")
+    
+    def cancel_progress_check(self, room_id: str, reason: str):
+        """Public method to cancel progress check"""
+        self._cancel_progress_timer(room_id, reason)
+    
+    def has_progress_timer(self, room_id: str) -> bool:
+        """Check if room has a pending progress timer"""
+        return room_id in self.progress_timers
+    
+    def get_active_progress_rooms(self):
+        """Get list of rooms with active progress timers"""
+        return list(self.progress_timers.keys())

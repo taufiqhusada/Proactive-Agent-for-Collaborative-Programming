@@ -61,7 +61,7 @@ class AIAgent:
         # Reflection service will be obtained when needed (it may not be initialized yet)
         self.reflection_service = None
 
-    def _centralized_ai_decision(self, room_id: str, is_reflection: bool = False) -> tuple[bool, str]:
+    def _centralized_ai_decision(self, room_id: str, is_reflection: bool = False, is_progress_check: bool = False) -> tuple[bool, str]:
         """Central AI decision making: Should intervene and what to say"""
         if not self.client:
             print("🚫 AI WILL NOT INTERVENE: No LLM client available")
@@ -85,6 +85,10 @@ class AIAgent:
                 print("❌ Error: Reflection service not available")
                 response = "What did you learn today?"
             return True, response if response else "What did you learn today?"
+        
+        # Handle 45-second progress check
+        if is_progress_check:
+            return self._handle_progress_check(room_id, context)
 
         # Get recent conversation context (last 5 messages)
         recent_conversation = ""
@@ -204,6 +208,105 @@ class AIAgent:
             print(f"❌ Error in AI decision: {e}")
             return False, ""
 
+    def _handle_progress_check(self, room_id: str, context: ConversationContext) -> tuple[bool, str]:
+        """Handle 45-second progress check intervention"""
+        try:
+            # Build conversation context (last 8 messages for better context)
+            recent_conversation = ""
+            for msg in context.messages[-10:]:
+                recent_conversation += f"{msg.username}: {msg.content}\n"
+            
+            # Build current state context
+            current_code = context.code_context if context.code_context else "No code written yet"
+            problem_info = f"Title: {context.problem_title or 'Not specified'}\nDescription: {context.problem_description or 'Not specified'}"
+            
+            # Create progress check prompt
+            prompt = f"""You are Bob, an AI pair programming assistant. You're doing a 45-second progress check to see if users are on track.
+
+Problem Context:
+{problem_info}
+Language: {context.programming_language}
+
+Current Code:
+{current_code}
+
+Recent Conversation (last 10 messages):
+{recent_conversation}
+
+PROGRESS CHECK TASK:
+Analyze if the users are making good progress toward solving the problem. Look for:
+
+RED FLAGS (should intervene):
+- Discussing completely wrong approach
+- Stuck on same issue repeatedly 
+- Silent for too long while having an active problem
+- Code going in wrong direction vs problem requirements
+- Misunderstanding fundamental concepts
+- One person dominating, other not participating
+
+GREEN FLAGS (don't intervene):
+- Making steady progress, even if slow
+- Having productive discussions about approach
+- Recently made progress or breakthroughs  
+- Actively debugging and learning
+- Both people contributing to conversation
+- On right track even if minor issues
+
+INTERVENTION TYPES:
+- REDIRECT: "I notice you're discussing X, but for this problem you might want to consider Y instead. What do you think?"
+- ENCOURAGE: "You're on the right track! Consider focusing on [specific next step]."
+- FACILITATE: "What does your partner think about this approach?" or "Can you explain your idea to your partner?"
+- HINT: "For this type of problem, you might want to think about [specific concept/approach]."
+
+Response format:
+- If should intervene: "YES|[intervention type]|[helpful message 15-40 words]"
+- If making good progress: "NO|[reason why they're doing well 10-30 words]"
+
+Your response:"""
+            
+
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful pair programming assistant doing progress monitoring. Only intervene when users truly need guidance."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=120,
+                temperature=0.7
+            )
+            
+            llm_response = response.choices[0].message.content.strip()
+            print(f"📊 Progress check LLM response: {llm_response}")
+            
+            if llm_response.startswith("YES|"):
+                # Parse: YES|TYPE|MESSAGE
+                parts = llm_response.split("|", 2)
+                if len(parts) >= 3:
+                    intervention_type = parts[1]
+                    intervention_message = parts[2]
+                    print(f"📊 PROGRESS INTERVENTION ({intervention_type}): {intervention_message[:50]}...")
+                    return True, intervention_message
+                else:
+                    print(f"❌ Progress check format error: {llm_response}")
+                    return False, ""
+            elif llm_response.startswith("NO|"):
+                # Parse: NO|REASON
+                parts = llm_response.split("|", 1)
+                if len(parts) >= 2:
+                    reason = parts[1]
+                    print(f"📊 Progress check: Users making good progress in room {room_id} - Reason: {reason}")
+                    return False, ""
+                else:
+                    print(f"📊 Progress check: Users making good progress in room {room_id}")
+                    return False, ""
+            else:
+                print(f"📊 Progress check: Users making good progress in room {room_id}")
+                return False, ""
+                
+        except Exception as e:
+            print(f"❌ Error in progress check: {e}")
+            return False, ""
+
     def _is_direct_ai_mention(self, message_content: str) -> bool:
         """Check if message contains direct AI mention keywords"""
         # Split into words for exact word matching (more efficient and accurate)
@@ -290,6 +393,11 @@ class AIAgent:
             if len(context.messages) > 10:  # max_context_messages
                 context.messages = context.messages[-10:]
             return
+        
+        # Trigger 45-second progress check (only if not already running)
+        # Only for user messages (not AI messages)
+        if not message.isAutoGenerated:
+            self.intervention_service.trigger_progress_check(room_id)
         
         # Keep only recent messages
         if len(context.messages) > 10:  # max_context_messages
@@ -579,7 +687,7 @@ Your response:"""
         try:
             print(f"🔄 Resetting AI agent state for room {room_id}")
             
-            # Cancel any pending interventions
+            # Cancel any pending interventions (includes progress timers)
             self.intervention_service.cleanup_room(room_id)
             
             # Remove conversation history
@@ -622,6 +730,20 @@ Your response:"""
         except Exception as e:
             print(f"❌ Error getting room state summary: {e}")
             return {"error": str(e)}
+
+    # Progress tracking methods
+    # Progress tracking methods
+    def cancel_progress_check(self, room_id: str, reason: str):
+        """Cancel 45-second progress tracking for a room"""
+        self.intervention_service.cancel_progress_check(room_id, reason)
+    
+    def has_progress_timer(self, room_id: str) -> bool:
+        """Check if room has a pending progress timer"""
+        return self.intervention_service.has_progress_timer(room_id)
+    
+    def get_active_progress_rooms(self):
+        """Get list of rooms with active progress timers"""
+        return self.intervention_service.get_active_progress_rooms()
 
     # Public methods for accessing intervention service functionality
     def cancel_pending_intervention(self, room_id: str, reason: str):
