@@ -26,7 +26,7 @@
             <div v-if="currentProblem.examples && currentProblem.examples.length > 0" class="examples-section">
                 <h6>Examples:</h6>
                 <div v-for="(example, index) in currentProblem.examples" :key="index" class="example">
-                    <div class="example-header">Subtask {{ index + 1 }}:</div>
+                    <div v-if="currentProblem.title[0] != '0'" class="example-header">Subtask {{ index + 1 }}:</div>
                     <div class="example-content">
                         <div class="example-input">
                             <strong>Input:</strong> <code>{{ example.input }}</code>
