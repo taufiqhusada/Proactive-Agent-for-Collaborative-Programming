@@ -1,15 +1,14 @@
 <template>
-    <div v-if="isVisible" class="modal-backdrop" @click="closeModal">
-        <div class="modal-content" @click.stop>
-            <div class="modal-header">
-                <h3>⚙️ AI Intervention Settings</h3>
-                <button @click="closeModal" class="close-button">×</button>
-            </div>
-            
-            <div class="modal-body">
-                <p class="modal-description">
-                    Configure when Bob should automatically jump in to help during your pair programming session.
-                </p>
+    <div v-if="isVisible" class="modal-popup">
+        <div class="modal-header">
+            <h3>⚙️ AI Intervention Settings</h3>
+            <button @click="closeModal" class="close-button">×</button>
+        </div>
+        
+        <div class="modal-body">
+            <p class="modal-description">
+                Configure when Bob should automatically jump in to help during your pair programming session.
+            </p>
                 
                 <div class="setting-item">
                     <div class="setting-info">
@@ -124,7 +123,6 @@
                     <span v-else>Save Settings</span>
                 </button>
             </div>
-        </div>
     </div>
 </template>
 
@@ -220,31 +218,24 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal-content {
-    background: #fff;
-    border-radius: 8px;
-    width: 90%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow: hidden;
-    border: 2px solid #ccc;
-    /* Remove all potential blur-causing properties */
-}
-
 /* Animation removed to prevent blur */
+
+.modal-popup {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #ffffff;
+    border-radius: 8px;
+    width: 450px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow: hidden;
+    /* border: 3px solid #333; */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    opacity: 1;
+    /* color: #000; */
+}
 
 .modal-header {
     padding: 1.5rem;
@@ -258,7 +249,8 @@ export default defineComponent({
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
-    color: #000000;
+    /* color: #000000; */
+    opacity: 1;
 }
 
 .close-button {
@@ -289,10 +281,12 @@ export default defineComponent({
 }
 
 .modal-description {
-    color: #333333;
+    /* color: #000000; */
     font-size: 0.875rem;
     margin: 0 0 1.5rem 0;
     line-height: 1.5;
+    opacity: 1;
+    font-weight: 500;
 }
 
 .setting-item {
@@ -319,9 +313,10 @@ export default defineComponent({
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-weight: 600;
+    font-weight: 700;
     color: #000000;
     margin-bottom: 0.25rem;
+    opacity: 1;
 }
 
 .setting-icon {
@@ -330,9 +325,11 @@ export default defineComponent({
 
 .setting-description {
     font-size: 0.875rem;
-    color: #444444;
+    color: #000000;
     line-height: 1.4;
     margin-bottom: 0.75rem;
+    opacity: 1;
+    font-weight: 400;
 }
 
 .setting-controls {
@@ -344,8 +341,9 @@ export default defineComponent({
     align-items: center;
     gap: 0.5rem;
     font-size: 0.875rem;
-    color: #333333;
+    color: #000000;
     font-weight: 500;
+    opacity: 1;
 }
 
 .time-input {
@@ -356,6 +354,8 @@ export default defineComponent({
     font-size: 0.875rem;
     text-align: center;
     background: #fff;
+    color: #000;
+    opacity: 1;
 }
 
 .time-input:disabled {
@@ -439,7 +439,8 @@ input:disabled + .slider {
 
 .cancel-button {
     background: #f1f5f9;
-    color: #1f2937;
+    color: #000000;
+    opacity: 1;
 }
 
 .cancel-button:hover:not(:disabled) {

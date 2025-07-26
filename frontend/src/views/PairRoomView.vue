@@ -28,13 +28,13 @@
                         @mode-changed="handleAIModeChanged"
                     />
                 </div>
-                <div class="mode-toggle">
+                <!-- <div class="mode-toggle">
                     <label class="switch">
                         <input type="checkbox" v-model="isReadOnly" id="readOnlyMode">
                         <span class="slider"></span>
                     </label>
                     <label for="readOnlyMode" class="mode-label">Read-only Mode</label>
-                </div>
+                </div> -->
             </div>
         </div>
 
