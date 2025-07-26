@@ -10,6 +10,33 @@
                     <span class="user-count">{{ onlineUsers }} online</span>
                 </div>
                 
+                <!-- Voice Recording Reset Button (shows when session started and speech supported) -->
+                <div v-if="sessionStarted && speechSupported" class="recording-controls" style="position: relative;">
+                    <button 
+                        @click="resetRecording" 
+                        :disabled="isResettingRecording"
+                        class="reset-recording-btn"
+                        title="Reset voice recording - Use this if recording gets stuck"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                            <path d="M21 3v5h-5"/>
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                            <path d="M3 21v-5h5"/>
+                            <circle cx="12" cy="12" r="1"/>
+                        </svg>
+                        {{ isResettingRecording ? 'Resetting...' : '🎤' }}
+                    </button>
+                    
+                    <!-- Success feedback for recording reset -->
+                    <div v-if="showRecordingResetSuccess" class="success-popup-small">
+                        <div class="success-content-small">
+                            <span class="success-icon">✅</span>
+                            <span class="success-text">Recording reset!</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Session Controls -->
                 <div class="session-controls" style="position: relative;">
                     <!-- Start Session Button (shows when session not started) -->
@@ -282,6 +309,10 @@ export default defineComponent({
         
         // AI State Reset
         const isResetting = ref(false)
+        
+        // Recording Reset State
+        const isResettingRecording = ref(false)
+        const showRecordingResetSuccess = ref(false)
         
         // Session State
         const sessionStarted = ref(false)
@@ -1315,6 +1346,60 @@ export default defineComponent({
             }
         }
 
+        const resetRecording = async () => {
+            console.log('🔄 Manual recording reset initiated')
+            isResettingRecording.value = true
+            
+            try {
+                // Force stop any existing recording
+                if (autoRecognition) {
+                    try {
+                        autoRecognition.stop()
+                        console.log('🛑 Stopped existing auto recognition')
+                    } catch (error) {
+                        console.log('⚠️ No active recognition to stop:', error.message)
+                    }
+                }
+                
+                // Reset all recording-related states
+                autoRecordingEnabled.value = false
+                isSpeaking.value = false
+                currentAutoTranscript.value = ''
+                isProcessingSpeech.value = false
+                isListening.value = false
+                
+                // Clear speech queue
+                speechQueue.value = []
+                
+                // Clear any active audio streams
+                activeAudioStreams.value.clear()
+                
+                console.log('🧹 Cleared all recording states')
+                
+                // Brief delay to ensure cleanup
+                await new Promise(resolve => setTimeout(resolve, 500))
+                
+                // Reinitialize speech recognition if supported
+                if (speechSupported.value) {
+                    initSpeechRecognition()
+                    console.log('🔄 Reinitialized speech recognition')
+                }
+                
+                // Show success feedback
+                showRecordingResetSuccess.value = true
+                setTimeout(() => {
+                    showRecordingResetSuccess.value = false
+                }, 2000)
+                
+                console.log('✅ Recording reset completed successfully')
+                
+            } catch (error) {
+                console.error('❌ Error during recording reset:', error)
+            } finally {
+                isResettingRecording.value = false
+            }
+        }
+
         // Text-to-Speech functions (OpenAI TTS)
         const initTextToSpeech = async () => {
             // Check if Web Audio API is supported for high-quality audio playback
@@ -2137,6 +2222,8 @@ export default defineComponent({
             aiVoiceEnabled,
             isTyping,
             isResetting,
+            isResettingRecording,
+            showRecordingResetSuccess,
             sessionStarted,
             showResetWarning,
             showSuccessPopup,
@@ -2153,7 +2240,8 @@ export default defineComponent({
             handleTypingActivity,
             handleTypingStart,
             startSession,
-            confirmResetSession
+            confirmResetSession,
+            resetRecording
         }
     }
 })
@@ -2291,6 +2379,46 @@ export default defineComponent({
     opacity: 0.6;
     cursor: not-allowed;
     transform: none;
+}
+
+.recording-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.reset-recording-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4rem 0.6rem;
+    background: #fef3cd;
+    color: #d97706;
+    border: 1px solid #d97706;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: fit-content;
+}
+
+.reset-recording-btn:hover:not(:disabled) {
+    background: #fed7aa;
+    border-color: #c2410c;
+    color: #c2410c;
+    transform: translateY(-1px);
+}
+
+.reset-recording-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.reset-recording-btn svg {
+    width: 12px;
+    height: 12px;
 }
 
 /* Chat message styles */
