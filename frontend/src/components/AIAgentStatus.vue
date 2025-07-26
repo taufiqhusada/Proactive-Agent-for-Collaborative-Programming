@@ -11,23 +11,35 @@
                     {{ reflectionActive ? 'Reflection Mode Active' : 'AI Teammate Active' }}
                 </div>
             </div>
-            <!-- Reflection Toggle Button -->
-            <button 
-                v-if="!reflectionActive"
-                @click="$emit('start-reflection')"
-                class="reflection-button-small"
-                title="Start learning reflection"
-            >
-                🎓 Reflect
-            </button>
-            <button 
-                v-else
-                @click="$emit('stop-reflection')"
-                class="reflection-stop-button"
-                title="Stop reflection and return to normal mode"
-            >
-                🎓 Exit Reflection
-            </button>
+            <!-- Action Buttons Container -->
+            <div class="action-buttons">
+                <!-- Intervention Settings Button -->
+                <button 
+                    @click="showInterventionSettings = true"
+                    class="settings-button"
+                    title="Configure AI intervention settings"
+                >
+                    ⚙️
+                </button>
+                
+                <!-- Reflection Toggle Button -->
+                <button 
+                    v-if="!reflectionActive"
+                    @click="$emit('start-reflection')"
+                    class="reflection-button-small"
+                    title="Start learning reflection"
+                >
+                    🎓 Reflect
+                </button>
+                <button 
+                    v-else
+                    @click="$emit('stop-reflection')"
+                    class="reflection-stop-button"
+                    title="Stop reflection and return to normal mode"
+                >
+                    🎓 Exit Reflection
+                </button>
+            </div>
         </div>            <div class="ai-description">
                 <p class="ai-desc-text">
                     {{ reflectionActive 
@@ -36,13 +48,25 @@
                 </p>
             </div>
     </div>
+    
+    <!-- Intervention Settings Modal -->
+    <InterventionSettingsModal 
+        :isVisible="showInterventionSettings"
+        :settings="interventionSettings"
+        @close="showInterventionSettings = false"
+        @save="handleSaveInterventionSettings"
+    />
 </template>
 
 <script>
-import { defineComponent } from 'vue'
+import { defineComponent, ref, onMounted } from 'vue'
+import InterventionSettingsModal from './InterventionSettingsModal.vue'
 
 export default defineComponent({
     name: 'AIAgentStatus',
+    components: {
+        InterventionSettingsModal
+    },
     props: {
         isActive: {
             type: Boolean,
@@ -53,7 +77,62 @@ export default defineComponent({
             default: false
         }
     },
-    emits: ['start-reflection', 'stop-reflection']
+    emits: ['start-reflection', 'stop-reflection'],
+    setup() {
+        const showInterventionSettings = ref(false)
+        const interventionSettings = ref({
+            idle_intervention_enabled: true,
+            idle_intervention_delay: 5,
+            progress_check_enabled: true,
+            progress_check_interval: 45
+        })
+        
+        const loadInterventionSettings = async () => {
+            try {
+                const response = await fetch('/api/intervention-settings')
+                const data = await response.json()
+                if (data.success) {
+                    interventionSettings.value = data.settings
+                }
+            } catch (error) {
+                console.error('Failed to load intervention settings:', error)
+            }
+        }
+        
+        const handleSaveInterventionSettings = async (newSettings) => {
+            try {
+                const response = await fetch('/api/intervention-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ settings: newSettings })
+                })
+                
+                const data = await response.json()
+                if (data.success) {
+                    interventionSettings.value = data.settings
+                    showInterventionSettings.value = false
+                } else {
+                    console.error('Failed to save intervention settings:', data.error)
+                    alert('Failed to save settings: ' + data.error)
+                }
+            } catch (error) {
+                console.error('Failed to save intervention settings:', error)
+                alert('Failed to save settings. Please try again.')
+            }
+        }
+        
+        onMounted(() => {
+            loadInterventionSettings()
+        })
+        
+        return {
+            showInterventionSettings,
+            interventionSettings,
+            handleSaveInterventionSettings
+        }
+    }
 })
 </script>
 
@@ -144,6 +223,36 @@ export default defineComponent({
     }
 }
 
+.action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.settings-button {
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+    color: #475569;
+    border: none;
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(148, 163, 184, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 1.75rem;
+}
+
+.settings-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(148, 163, 184, 0.3);
+    background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%);
+}
+
 .ai-description {
     border-top: 1px solid rgba(14, 165, 233, 0.2);
     padding-top: 0.75rem;
@@ -168,7 +277,6 @@ export default defineComponent({
     transition: all 0.2s ease;
     white-space: nowrap;
     box-shadow: 0 2px 4px rgba(125, 211, 252, 0.3);
-    margin-left: 0.5rem;
 }
 
 .reflection-button-small:hover:not(:disabled) {
@@ -194,7 +302,6 @@ export default defineComponent({
     transition: all 0.2s ease;
     white-space: nowrap;
     box-shadow: 0 2px 4px rgba(252, 165, 165, 0.3);
-    margin-left: 0.5rem;
 }
 
 .reflection-stop-button:hover {

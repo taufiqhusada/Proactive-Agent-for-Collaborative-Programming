@@ -1068,5 +1068,61 @@ def start_session():
         print(f"❌ Error starting session: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/intervention-settings', methods=['GET'])
+def get_intervention_settings():
+    """Get current intervention settings"""
+    try:
+        settings = ai_agent.intervention_service.get_intervention_settings()
+        return jsonify({
+            'success': True,
+            'settings': settings
+        })
+    except Exception as e:
+        print(f"❌ Error getting intervention settings: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/intervention-settings', methods=['POST'])
+def update_intervention_settings():
+    """Update intervention settings"""
+    try:
+        data = request.get_json()
+        if not data or 'settings' not in data:
+            return jsonify({'success': False, 'error': 'Missing settings data'}), 400
+        
+        settings = data['settings']
+        
+        # Validate settings
+        valid_keys = {'idle_intervention_enabled', 'idle_intervention_delay', 'progress_check_enabled', 'progress_check_interval'}
+        for key in settings:
+            if key not in valid_keys:
+                return jsonify({'success': False, 'error': f'Invalid setting key: {key}'}), 400
+            
+            # Validate boolean settings
+            if key in ['idle_intervention_enabled', 'progress_check_enabled']:
+                if not isinstance(settings[key], bool):
+                    return jsonify({'success': False, 'error': f'Setting value must be boolean: {key}'}), 400
+            
+            # Validate timing settings
+            elif key == 'idle_intervention_delay':
+                if not isinstance(settings[key], (int, float)) or not (1 <= settings[key] <= 60):
+                    return jsonify({'success': False, 'error': f'Idle intervention delay must be between 1 and 60 seconds: {key}'}), 400
+            
+            elif key == 'progress_check_interval':
+                if not isinstance(settings[key], (int, float)) or not (10 <= settings[key] <= 300):
+                    return jsonify({'success': False, 'error': f'Progress check interval must be between 10 and 300 seconds: {key}'}), 400
+        
+        # Update settings
+        ai_agent.intervention_service.update_intervention_settings(settings)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Intervention settings updated successfully',
+            'settings': ai_agent.intervention_service.get_intervention_settings()
+        })
+        
+    except Exception as e:
+        print(f"❌ Error updating intervention settings: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)

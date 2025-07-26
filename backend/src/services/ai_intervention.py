@@ -31,10 +31,17 @@ class AIInterventionService:
         # Progress tracking - single 30s timer per room
         self.progress_timers: Dict[str, threading.Timer] = {}  # room_id -> threading.Timer
         
+        # Intervention configuration settings
+        self.intervention_settings = {
+            'idle_intervention_enabled': True,  # idle intervention
+            'idle_intervention_delay': 5,       # seconds to wait before idle intervention
+            'progress_check_enabled': True,     # progress check
+            'progress_check_interval': 45       # seconds between progress checks
+        }
+        
         # Timing parameters
         self.response_cooldown = 15  # Minimum seconds between AI responses
         self.min_messages_before_response = 3  # Wait for at least 3 messages before responding
-        self.progress_check_interval = 30  # Check progress after 30 seconds of activity
 
     def _cancel_pending_intervention(self, room_id: str, reason: str):
         """Cancel any pending timer for a room"""
@@ -46,13 +53,19 @@ class AIInterventionService:
     
     def _schedule_idle_intervention(self, room_id: str):
         """Schedule a 5-second idle intervention timer using threading.Timer"""
+        # Check if idle intervention is disabled
+        if not self.intervention_settings.get('idle_intervention_enabled', True):
+            print(f"🚫 Idle intervention disabled for room {room_id}")
+            return
+            
         # Cancel existing timer
         self._cancel_pending_intervention(room_id, "new timer scheduled")
         
         def timer_callback():
-            """Handle timer completion after 5 seconds"""
+            """Handle timer completion after configured delay"""
             try:
-                print(f"⏰ 5-second timer completed for room {room_id}")
+                delay = self.intervention_settings.get('idle_intervention_delay', 5)
+                print(f"⏰ {delay}-second timer completed for room {room_id}")
                 
                 # Clean up timer reference
                 self.pending_timers.pop(room_id, None)
@@ -62,24 +75,25 @@ class AIInterventionService:
                 
                 # Check if we should respond
                 if self.should_respond(room_id, conversation_history):
-                    print(f"🤖 AI will respond after 5-second idle period in room {room_id}")
+                    print(f"🤖 AI will respond after {delay}-second idle period in room {room_id}")
                     response = self._generate_response_sync(room_id)
                     if response:
                         self.send_message_callback(room_id, response)
                 else:
-                    print(f"🚫 No intervention needed after 5-second idle period for room {room_id}")
+                    print(f"🚫 No intervention needed after {delay}-second idle period for room {room_id}")
                         
             except Exception as e:
                 print(f"❌ Timer callback error for room {room_id}: {e}")
         
-        # Create and start timer
-        timer = threading.Timer(5.0, timer_callback)
+        # Create and start timer with configurable delay
+        delay = self.intervention_settings.get('idle_intervention_delay', 5)
+        timer = threading.Timer(float(delay), timer_callback)
         timer.daemon = True
         timer.start()
         
         # Store timer reference
         self.pending_timers[room_id] = timer
-        print(f"⏱️ Started 5-second timer for room {room_id}")
+        print(f"⏱️ Started {delay}-second timer for room {room_id}")
 
     def _schedule_reflection_response(self, room_id: str):
         """Schedule a reflection response after 5 seconds"""
@@ -192,18 +206,24 @@ class AIInterventionService:
     
     # Progress tracking methods
     def trigger_progress_check(self, room_id: str):
-        """Trigger 30-second progress check timer on new message"""
+        """Trigger (45)-second progress check timer on new message"""
+        # Check if progress check is disabled
+        if not self.intervention_settings.get('progress_check_enabled', True):
+            print(f"🚫 Progress check disabled for room {room_id}")
+            return
+            
         # If already running, don't create new timer
         if room_id in self.progress_timers:
             print(f"📊 Progress timer already running for room {room_id}, keeping existing")
             return
             
-        print(f"📊 Starting 30-second progress check timer for room {room_id}")
+        interval = self.intervention_settings.get('progress_check_interval', 30)
+        print(f"📊 Starting {interval}-second progress check timer for room {room_id}")
         
         def progress_check_callback():
-            """Handle 30-second progress check"""
+            """Handle progress check"""
             try:
-                print(f"📊 30-second progress check triggered for room {room_id}")
+                print(f"📊 {interval}-second progress check triggered for room {room_id}")
                 
                 # Clean up timer reference
                 self.progress_timers.pop(room_id, None)
@@ -235,8 +255,8 @@ class AIInterventionService:
             except Exception as e:
                 print(f"❌ Error in progress check for room {room_id}: {e}")
         
-        # Create and start 30-second timer
-        timer = threading.Timer(self.progress_check_interval, progress_check_callback)
+        # Create and start timer with configurable interval
+        timer = threading.Timer(float(interval), progress_check_callback)
         timer.daemon = True
         timer.start()
         
@@ -252,7 +272,7 @@ class AIInterventionService:
             print(f"🚫 CANCELLED progress timer ({reason}) in room {room_id}")
     
     def cancel_progress_check(self, room_id: str, reason: str):
-        """Public method to cancel progress check"""
+        """Public method to cancel progress check""" 
         self._cancel_progress_timer(room_id, reason)
     
     def has_progress_timer(self, room_id: str) -> bool:
@@ -262,3 +282,24 @@ class AIInterventionService:
     def get_active_progress_rooms(self):
         """Get list of rooms with active progress timers"""
         return list(self.progress_timers.keys())
+
+    def update_intervention_settings(self, settings: Dict[str, bool]):
+        """Update intervention configuration settings"""
+        for key, value in settings.items():
+            if key in self.intervention_settings:
+                self.intervention_settings[key] = value
+                print(f"🔧 Updated intervention setting: {key} = {value}")
+        
+        # If idle intervention is disabled, cancel all pending timers
+        if not self.intervention_settings.get('idle_intervention_enabled', True):
+            for room_id in list(self.pending_timers.keys()):
+                self._cancel_pending_intervention(room_id, "idle intervention disabled")
+        
+        # If progress check is disabled, cancel all progress timers
+        if not self.intervention_settings.get('progress_check_enabled', True):
+            for room_id in list(self.progress_timers.keys()):
+                self._cancel_progress_timer(room_id, "progress check disabled")
+    
+    def get_intervention_settings(self) -> Dict[str, bool]:
+        """Get current intervention configuration settings"""
+        return self.intervention_settings.copy()

@@ -1,6 +1,10 @@
 import { ref, watch } from 'vue'
+import { useCodeAnalysisSettings } from './useCodeAnalysisSettings'
 
 export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem: any, socket: any, roomId: any, currentUserId: any, auth: any, view: any, isLocalUpdate: any, isReadOnly: any, showCodeAnalysisLineIndicators: any, clearCodeAnalysisLineIndicators: any) {
+  // Get code analysis settings
+  const { codeAnalysisSettings } = useCodeAnalysisSettings()
+  
   // Code analysis state
   const showCodeAnalysis = ref(false)
   const currentCodeBlock = ref(null)
@@ -257,6 +261,12 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
   const onCursorActivity = (editor: any) => {
     console.log('🔍 onCursorActivity triggered')
     
+    // Check if code analysis is disabled
+    if (!codeAnalysisSettings.value.enabled) {
+      console.log('🚫 Code analysis is disabled')
+      return
+    }
+    
     const cursor = editor.state.selection.main.head
     const cursorPos = editor.state.doc.lineAt(cursor)
     
@@ -273,13 +283,14 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
       clearTimeout(userTypingTimer.value)
     }
     
-    console.log('⏱️ Setting 2-second timer for code analysis')
+    const delay = codeAnalysisSettings.value.delay * 1000 // Convert to milliseconds
+    console.log(`⏱️ Setting ${codeAnalysisSettings.value.delay}-second timer for code analysis`)
     
     // Set new timer - wait for user to stop typing
     userTypingTimer.value = setTimeout(() => {
       console.log('⏰ Timer expired, analyzing code...')
       onUserStoppedTyping(editor, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
-    }, 2000) // 2 seconds of inactivity
+    }, delay)
   }
   
   const onUserStoppedTyping = (editor: any, cursor: any) => {
@@ -400,6 +411,12 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
   watch(code, (newValue, oldValue) => {
     console.log('👀 Code watcher triggered - new length:', newValue.length, 'old length:', oldValue?.length || 0)
     
+    // Check if code analysis is disabled
+    if (!codeAnalysisSettings.value.enabled) {
+      console.log('🚫 Code analysis is disabled')
+      return
+    }
+    
     if (newValue !== oldValue && !isLocalUpdate.value) {
       console.log('🔍 Code changed, starting analysis timer...')
       
@@ -407,6 +424,8 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
       if (userTypingTimer.value) {
         clearTimeout(userTypingTimer.value)
       }
+      
+      const delay = codeAnalysisSettings.value.delay * 1000 // Convert to milliseconds
       
       // Set new timer - wait for user to stop typing
       userTypingTimer.value = setTimeout(() => {
@@ -417,7 +436,7 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
           const cursorPos = view.value.state.doc.lineAt(cursor)
           onUserStoppedTyping(view.value, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
         }
-      }, 2000)
+      }, delay)
     }
   })
 
