@@ -54,9 +54,9 @@
         </div>
       </form>
       
-      <div class="login-hint">
+      <!-- <div class="login-hint">
         <p><strong>Hint:</strong> Password is "password"</p>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>

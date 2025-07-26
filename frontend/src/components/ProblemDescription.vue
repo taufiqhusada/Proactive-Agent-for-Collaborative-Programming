@@ -106,12 +106,17 @@ export default defineComponent({
                     <p><strong>Scenario:</strong> A user has a gift card with a fixed value (e.g., $100) and wants to buy two items from their shopping cart whose prices add up exactly to the gift card value.</p>
                     <p>Implement a Gift Card Purchase Assistant that helps the user make the best use of their gift card.</p>
                     <ul>
-                        <li><strong>Subtask 1:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li>
-                        <li><strong>Subtask 2:</strong> Find the pair (by indices) that includes the highest-priced item possible. </li>
-                        <li><strong>Subtask 3:</strong> Given the user wants to buy one item, suggest which other item they should buy (by index) to use the gift card exactly.</li>
+                        <li><strong>Subtask 1:</strong> Given the user wants to buy one item, suggest which other item they should buy (by index) to use the gift card exactly.</li>
+                        <li><strong>Subtask 2:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li>
+                        <li><strong>Subtask 3:</strong> Find the pair (by indices) that includes the highest-priced item possible. </li>
                     </ul>
                 `,
                 examples: [
+                    {
+                        input: "prices =  [40, 60, 20, 80, 90], gift_card = 100, chosen_index = 2",
+                        output: "0",
+                        explanation: "If user chooses item at index 1 (price 60), suggest index 0 (price 40) to use the gift card."
+                    },
                     {
                         input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
                         output: "[[0,1],[2,3]]",
@@ -121,11 +126,6 @@ export default defineComponent({
                         input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
                         output: "[2,3]",
                         explanation: "[2,3] is chosen because it includes 80, the highest single item in any valid pair summing to 100. No pair can be form with 90, so we chose to include 80 instead."
-                    },
-                    {
-                        input: "prices =  [40, 60, 20, 80, 90], gift_card = 100, chosen_index = 2",
-                        output: "0",
-                        explanation: "If user chooses item at index 1 (price 60), suggest index 0 (price 40) to use the gift card."
                     }
                 ],
                 constraints: [
@@ -142,7 +142,7 @@ export default defineComponent({
                     <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
                     <ul>
                         <li><strong>Subtask 1 - Daily Average:</strong> Calculate the overall average steps per day across all recorded days.</li>
-                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within k consecutive days.</li>
+                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
                         <li><strong>Subtask 3 - Goal Achievement Streak:</strong> Find the shortest consecutive days needed to reach or exceed a target step sum.</li>
                     </ul>
                 `,
@@ -212,6 +212,10 @@ export default defineComponent({
         const giftCardBoilerplate = `prices = [40, 60, 20, 80, 90]
 gift_card = 100
 
+def suggest_pair(prices, gift_card, chosen_index):
+
+  return None
+
 def find_all_pairs(prices, gift_card):
 
   return []
@@ -220,14 +224,10 @@ def find_highest_pair(prices, gift_card):
     
   return []
 
-def suggest_pair(prices, gift_card, chosen_index):
-
-  return None
-
 # Example usage:
+print(suggest_pair(prices, gift_card, 1))
 print(find_all_pairs(prices, gift_card))
 print(find_highest_pair(prices, gift_card))
-print(suggest_pair(prices, gift_card, 1))
                 `;
 
         // Boilerplate code for Step Tracker Insight (Python)

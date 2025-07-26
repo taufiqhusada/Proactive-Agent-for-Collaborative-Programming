@@ -3,8 +3,15 @@
     <div class="chat-header">
       <h6 class="chat-title">
         <span class="chat-icon">👨‍💻</span>
-        Personal AI Assistant
+        Personal AI Assistant (Bob)
       </h6>
+      <button 
+        @click="showInterventionSettings = true"
+        class="settings-button"
+        title="Configure AI intervention settings"
+      >
+        ⚙️
+      </button>
     </div>
 
     <div class="chat-messages" ref="messagesContainer">
@@ -70,13 +77,25 @@
       </div>
     </div>
   </div>
+  
+  <!-- Intervention Settings Modal -->
+  <InterventionSettingsModal 
+    :isVisible="showInterventionSettings"
+    :settings="interventionSettings"
+    @close="showInterventionSettings = false"
+    @save="handleSaveInterventionSettings"
+  />
 </template>
 
 <script>
 import { defineComponent, ref, nextTick, onMounted, onUnmounted } from 'vue'
+import InterventionSettingsModal from './InterventionSettingsModal.vue'
 
 export default defineComponent({
   name: 'IndividualAIChat',
+  components: {
+    InterventionSettingsModal
+  },
   props: {
     roomId: {
       type: String,
@@ -93,6 +112,15 @@ export default defineComponent({
     const isTyping = ref(false)
     const messagesContainer = ref(null)
     const messageIdCounter = ref(0)
+    
+    // Intervention settings
+    const showInterventionSettings = ref(false)
+    const interventionSettings = ref({
+      idle_intervention_enabled: true,
+      idle_intervention_delay: 5,
+      progress_check_enabled: true,
+      progress_check_interval: 30
+    })
 
     const scrollToBottom = () => {
       nextTick(() => {
@@ -173,6 +201,43 @@ export default defineComponent({
       messageIdCounter.value = 0
     }
 
+    // Intervention settings functions
+    const loadInterventionSettings = async () => {
+      try {
+        const response = await fetch('/api/intervention-settings')
+        const data = await response.json()
+        if (data.success) {
+          interventionSettings.value = data.settings
+        }
+      } catch (error) {
+        console.error('Failed to load intervention settings:', error)
+      }
+    }
+
+    const handleSaveInterventionSettings = async (newSettings) => {
+      try {
+        const response = await fetch('/api/intervention-settings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ settings: newSettings })
+        })
+        
+        const data = await response.json()
+        if (data.success) {
+          interventionSettings.value = data.settings
+          showInterventionSettings.value = false
+        } else {
+          console.error('Failed to save intervention settings:', data.error)
+          alert('Failed to save settings: ' + data.error)
+        }
+      } catch (error) {
+        console.error('Failed to save intervention settings:', error)
+        alert('Failed to save settings. Please try again.')
+      }
+    }
+
     // Handle AI messages redirected from shared chat in personal mode
     const handleRedirectedAIMessage = (event) => {
       console.log('🤖 IndividualAIChat: Received redirected AI message', event.detail)
@@ -214,6 +279,9 @@ export default defineComponent({
       
       // Listen for messages from CodeRunner
       window.addEventListener('send-to-personal-ai', handleCodeRunnerMessage)
+
+      // Load intervention settings on mount
+      loadInterventionSettings()
     })
 
     onUnmounted(() => {
@@ -232,7 +300,10 @@ export default defineComponent({
       sendMessage,
       formatTime,
       clearChat,
-      addMessage
+      addMessage,
+      showInterventionSettings,
+      interventionSettings,
+      handleSaveInterventionSettings
     }
   }
 })
@@ -491,5 +562,29 @@ export default defineComponent({
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.settings-button {
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+  color: #475569;
+  border: none;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(148, 163, 184, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 1.75rem;
+}
+
+.settings-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(148, 163, 184, 0.3);
+  background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%);
 }
 </style>
