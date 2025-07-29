@@ -31,9 +31,9 @@ socketio = SocketIO(
     async_mode="eventlet", # this is for GCP deployment
     # Support both transports for better compatibility
     transports=['websocket', 'polling'],
-    # Increase timeouts for Cloud Run
-    ping_timeout=60,
-    ping_interval=25
+    # Better timeout settings to prevent idle disconnections
+    ping_timeout=120,  # Wait 2 minutes for pong response  
+    ping_interval=20,  # Send ping every 20 seconds
 )
 jwt = JWTManager(app)
 
@@ -150,13 +150,22 @@ def ws_connect():
 def ws_join(data):
     room = data["room"]
     username = data.get("username", "Guest")  # Get username from client
+    current_code = data.get("current_code", None)  # Get current code from frontend
+    current_language = data.get("current_language", "python")  # Get current language from frontend
+    
     join_room(room)
     manager.join(request.sid, room, username)
     
-    # Get current room state and send to new user
+    # Get current room state
     room_state = manager.get_room_state(room)
     current_user_count = len(manager.rooms.get(room, set()))
     print(f"Client {request.sid} ({username}) joined room {room}, sending state. Users in room: {current_user_count}")
+    
+    # If this is the first user and they have code, use their code instead of default
+    if current_user_count == 1 and current_code is not None and current_code.strip() != 'print("Hello")':
+        print(f"First user joined with existing code, updating room state from default")
+        manager.set_room_state(room, current_code, current_language)
+        room_state = manager.get_room_state(room)  # Get updated state
     
     # AI agent joins the room when first user joins
     if current_user_count == 1:

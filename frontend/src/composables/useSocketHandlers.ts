@@ -185,17 +185,25 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
       
       socket.emit('join', { 
         room: roomId, 
-        username: auth?.user || 'Guest' 
-      }, (response) => {
+        username: auth?.user || 'Guest',
+        current_code: code.value,  // Send current code to backend
+        current_language: selectedLanguage.value  // Send current language to backend
+      }, (response: any) => {
         if (response && response.code) {
-          lastReceivedContent.value = response.code
-          isLocalUpdate.value = true
-          code.value = response.code
+          // Only update if the response code is different from what we have
+          if (response.code !== code.value) {
+            console.log('Received different code from server, updating local state')
+            lastReceivedContent.value = response.code
+            isLocalUpdate.value = true
+            code.value = response.code
+          } else {
+            console.log('Server code matches local code, keeping current state')
+          }
         }
       })
     })
 
-    socket.on('update', ({ delta, sourceId }) => {
+    socket.on('update', ({ delta, sourceId }: any) => {
       if (sourceId !== socket.id) {
         lastReceivedContent.value = delta
         isLocalUpdate.value = true
@@ -203,15 +211,15 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
       }
     })
 
-    socket.on('cursor', (data) => {
+    socket.on('cursor', (data: any) => {
       handleRemoteCursor(data)
     })
 
-    socket.on('selection', (data) => {
+    socket.on('selection', (data: any) => {
       handleRemoteSelection(data)
     })
     
-    socket.on('user_disconnected', (data) => {
+    socket.on('user_disconnected', (data: any) => {
       if (view.value) {
         view.value.dispatch({
           effects: [clearRemoteCursor.of(data.userId)]
@@ -219,18 +227,41 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
       }
     })
 
-    socket.on('code_execution_result', (data) => {
+    socket.on('code_execution_result', (data: any) => {
       console.log('📡 Received code execution from another user:', data)
       handleRemoteCodeExecution(data)
     })
 
-    socket.on('code_analysis_result', (data) => {
+    socket.on('code_analysis_result', (data: any) => {
       console.log('📊 Received code analysis from backend:', data)
       handleRemoteCodeAnalysis(data)
     })
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (error: any) => {
       console.error('Socket connection error:', error)
+    })
+
+    // Handle reconnection - rejoin room with current state
+    socket.on('reconnect', () => {
+      console.log('Socket reconnected, rejoining room with current state')
+      socket.emit('join', { 
+        room: roomId, 
+        username: auth?.user || 'Guest',
+        current_code: code.value,  // Send current code to backend
+        current_language: selectedLanguage.value  // Send current language to backend
+      }, (response: any) => {
+        if (response && response.code) {
+          // Only update if the response code is different from what we have
+          if (response.code !== code.value) {
+            console.log('After reconnection: Received different code from server, updating local state')
+            lastReceivedContent.value = response.code
+            isLocalUpdate.value = true
+            code.value = response.code
+          } else {
+            console.log('After reconnection: Server code matches local code, keeping current state')
+          }
+        }
+      })
     })
   }
 
@@ -243,6 +274,7 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
     socket.off('code_execution_result')
     socket.off('code_analysis_result')
     socket.off('connect_error')
+    socket.off('reconnect')
     socket.emit('leave', { room: roomId })
   }
 
