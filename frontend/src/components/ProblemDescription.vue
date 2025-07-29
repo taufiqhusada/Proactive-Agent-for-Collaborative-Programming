@@ -213,14 +213,17 @@ export default defineComponent({
 gift_card = 100
 
 def suggest_pair(prices, gift_card, chosen_index):
+  # Find the index of an item that pairs with the chosen item to use the gift card exactly
 
   return None
 
 def find_all_pairs(prices, gift_card):
+  # Return all pairs of item indices whose prices add up exactly to the gift card value
 
   return []
 
 def find_highest_pair(prices, gift_card):
+  # Find the pair that includes the highest-priced item possible
     
   return []
 
@@ -236,14 +239,17 @@ k = 3
 target = 30000
 
 def daily_average(steps):
+  # Calculate the overall average steps per day across all recorded days
 
   return 0.0
 
 def best_k_day_streak(steps, k):
+  # Find the highest average step count within any k consecutive days
 
   return 0.0
 
 def shortest_perfect_goal_streak(steps, target):
+  # Find the shortest consecutive days needed to reach or exceed a target step sum
 
   return 0
 
@@ -258,14 +264,17 @@ print(f"Shortest streak to reach {target}: {shortest_perfect_goal_streak(steps, 
 new_interval = [8,16]
 
 def sort_intervals(intervals):
+  # Sort all meeting intervals by their start time
 
   return []
 
 def merge_intervals(intervals):
+  # Merge all overlapping or adjacent meeting intervals
 
   return []
 
 def insert_and_merge(intervals, new_interval):
+  # Insert a new meeting interval and merge with existing bookings as needed
 
   return []
 
@@ -279,6 +288,7 @@ print(f"After inserting {new_interval}: {insert_and_merge(intervals, new_interva
         const firstRepeatedBoilerplate = `nums = [2, 5, 3, 2, 8, 7]
 
 def first_repeated_number(nums):
+  # Return the first number that appears more than once in the list
     
   return None
 
