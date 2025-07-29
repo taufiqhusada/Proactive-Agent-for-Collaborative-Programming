@@ -167,8 +167,13 @@ class AICodeAnalysisService:
                 2. **Logic Errors**: Algorithm mistakes, wrong loop bounds, incorrect conditions
                 3. **Syntax Errors**: Missing parentheses, colons, indentation errors
                 4. **Runtime Errors**: Index out of bounds, division by zero, type errors
-                5. **Algorithm Optimization**: Inefficient approaches, better algorithms available
-                6. **Learning Opportunities**: Algorithmic improvements
+                5. **Algorithm Optimization**: ONLY suggest optimizations for ACTUAL performance issues
+
+                CRITICAL: Before suggesting optimizations, carefully analyze the actual time complexity:
+                - A SINGLE loop iterating through an array is O(n), NOT O(n²)
+                - O(n²) requires NESTED loops or repeated operations inside loops
+                - Don't assume complexity without analyzing the actual code structure
+                - Consider the specific problem context - some O(n) solutions are optimal
 
                 If the code is functionally correct and reasonably efficient, respond with positive feedback.
 
@@ -185,13 +190,14 @@ class AICodeAnalysisService:
                 {{"issue": {{"title": "Code looks good!", "description": "Your solution is working correctly and follows good algorithmic practices.", "hint": "Great work! This approach should solve the problem effectively."}}}}
 
                 Examples of VALID issues:
-                - "Optimization Opportunity: O(n²) nested loops could be O(n) with hash map. Hint: Store seen values for faster lookup."
                 - "Logic Error: Loop condition 'i <= len(arr)' causes index error. Hint: Use 'i < len(arr)'."
+                - "Undefined Variable: Variable 'n' used but not defined. Hint: Use len(arr) instead."
                 
                 Examples of INVALID issues (DO NOT report):
                 - Variable naming conventions
                 - Missing comments
                 - Code formatting/style
+                - Single loop optimizations when the loop is already O(n) and appropriate
                 """
 
     def _parse_code_analysis(self, analysis_text: str, code: str, context: Dict[str, Any], 
@@ -282,7 +288,7 @@ class AICodeAnalysisService:
             if not has_error and not problem_context:
                 return None  # Don't analyze successful code without knowing what it should do
             
-            prompt = f"""Analyze this code execution:
+            prompt = f"""Analyze this code execution with subtask awareness:
 
                     Code: {code[:500]}
                     Problem Context: {problem_context or 'General coding task'}
@@ -290,15 +296,24 @@ class AICodeAnalysisService:
                     Output: {output[:300] if output else 'No output'}
                     Error: {error[:300] if error else 'No error'}
 
+                    SUBTASK ANALYSIS INSTRUCTIONS:
+                    1. Identify which part/subtask of the problem this code addresses
+                    2. Check if this subtask is correctly implemented
+                    3. If working on a multi-step problem (like Two Sum with multiple test cases):
+                       - Does code handle the first test case correctly?
+                       - Does it handle edge cases or additional requirements?
+                       - Is it ready for the next subtask/optimization?
+
+
                     Instructions:
                     - If syntax/runtime errors: suggest the fix:
                     * "Fix: [issue]"
                     - If code runs but gives incorrect output (i.e., doesn’t meet requirements):
                     * "Output: [why the output is incorrect, and what it should be]"
-                    - If code works but can be optimize, suggest optimization, for example :
-                    * Nested loops for searching/finding pairs → "Optimize: Use hash map"
-                    * Linear search in loops → "Optimize: Use hash map/set"
-                    * O(n²) when O(n) possible → "Optimize: Better algorithm"
+                    - If code works but has ACTUAL performance issues, suggest optimization:
+                    * ONLY suggest optimization for GENUINE O(n²) patterns (nested loops)
+                    * A single loop is O(n) and often optimal - don't suggest hash maps unnecessarily
+                    * Consider the problem context - some algorithms require certain approaches
                     - Only return "correct" if code is both working AND reasonably efficient
 
                     Provide analysis (max 150 characters):
@@ -307,7 +322,7 @@ class AICodeAnalysisService:
                     - Inefficient: "Optimize: [suggestion]"
                     - Good code: "correct"
 
-                    Examples: "Fix: Missing )", "output does not match the requirement, fix: ...", "Optimize: Use hash map", "correct"
+                    Examples: "Fix: Missing )", "Subtask 1: output does not match the requirement, fix: ...", "Optimize Subtask 1: Use hash map", "correct"
                     """
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
@@ -328,13 +343,17 @@ class AICodeAnalysisService:
                     "type": "success",
                 }
             
-            # Determine type based on content
+            # Determine type based on content with subtask awareness
             if analysis.lower().startswith("fix:"):
                 analysis_type = "error"
+            elif analysis.lower().startswith("next:"):
+                analysis_type = "info"  # Next subtask guidance
+            elif analysis.lower().startswith("ready:"):
+                analysis_type = "success"  # Ready for next step
+            elif analysis.lower().startswith("output:"):
+                analysis_type = "warning"  # Output mismatch
             elif analysis.lower().startswith("optimize:"):
                 analysis_type = "optimization" 
-            elif analysis.lower().startswith("output:"):
-                analysis_type = "warning"
             else:
                 analysis_type = "error" if has_error else "warning"
             
