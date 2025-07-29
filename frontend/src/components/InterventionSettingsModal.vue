@@ -143,7 +143,7 @@ export default defineComponent({
                 idle_intervention_enabled: true,
                 idle_intervention_delay: 5,
                 progress_check_enabled: true,
-                progress_check_interval: 45
+                progress_check_interval: 30
             })
         }
     },
@@ -155,12 +155,12 @@ export default defineComponent({
             idle_intervention_enabled: true,
             idle_intervention_delay: 5,
             progress_check_enabled: true,
-            progress_check_interval: 45
+            progress_check_interval: 30
         })
         
         // Separate local settings for code analysis (frontend-only)
         const localCodeAnalysisSettings = ref({
-            enabled: true,
+            enabled: false,
             delay: 2
         })
         

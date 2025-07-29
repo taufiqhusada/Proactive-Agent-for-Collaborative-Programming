@@ -36,7 +36,7 @@ class AIInterventionService:
             'idle_intervention_enabled': True,  # idle intervention
             'idle_intervention_delay': 5,       # seconds to wait before idle intervention
             'progress_check_enabled': True,     # progress check
-            'progress_check_interval': 45       # seconds between progress checks
+            'progress_check_interval': 30       # seconds between progress checks
         }
         
         # Timing parameters
