@@ -12,6 +12,13 @@ import App from './App.vue'
 import router from './router'
 import { useAuth } from './stores/useAuth'
 
+// Import localStorage cleanup
+import { useRoomPersistence } from './composables/useLocalStorage'
+
+// Initialize cleanup of expired room states
+const { cleanupExpiredStates } = useRoomPersistence('')
+cleanupExpiredStates()
+
 // import { loader } from '@guolao/vue-monaco-editor'
 // loader.config({
 //   paths: {

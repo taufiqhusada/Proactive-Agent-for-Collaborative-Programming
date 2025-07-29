@@ -143,6 +143,7 @@ import { useScaffolding } from '@/composables/useScaffolding'
 import { useReflectionSession } from '@/composables/useReflectionSession'
 import { useCodeMirrorExtensions } from '@/composables/useCodeMirrorExtensions'
 import { useSocketHandlers } from '@/composables/useSocketHandlers'
+import { useRoomPersistence } from '@/composables/useLocalStorage'
 
 // Import styles
 export default defineComponent({
@@ -159,8 +160,21 @@ export default defineComponent({
         const route = useRoute()
         const auth = useAuth()
         const roomId = String(route.params.roomId)
-        const code = ref('print("Hello")')
-        const selectedLanguage = ref('python')
+        
+        // Import room persistence composable
+        const { getPersistedCode, getPersistedLanguage, saveRoomState } = useRoomPersistence(roomId)
+        
+        // Initialize with persisted state if available
+        const code = ref(getPersistedCode())
+        const selectedLanguage = ref(getPersistedLanguage())
+        
+        // Log initialization state
+        console.log('📁 Room initialized with:', {
+            roomId,
+            persistedCode: code.value.substring(0, 50) + '...',
+            persistedLanguage: selectedLanguage.value
+        })
+
         const extensions = ref([python()])
         const view = shallowRef()
         const lastReceivedContent = ref('')
@@ -207,7 +221,7 @@ export default defineComponent({
             view, lastReceivedContent, isLocalUpdate, isReadOnly,
             codeMirrorExtensions.setRemoteCursor, codeMirrorExtensions.clearRemoteCursor, 
             codeMirrorExtensions.generateUserColor, codeMirrorExtensions.showCodeAnalysisLineIndicators,
-            codeAnalysis.showCodeAnalysis, codeAnalysis.currentCodeBlock
+            codeAnalysis.showCodeAnalysis, codeAnalysis.currentCodeBlock, saveRoomState
         )
 
         const updateLanguage = () => {
@@ -314,6 +328,9 @@ export default defineComponent({
             isLocalUpdate.value = true
             code.value = value
             
+            // Save to localStorage for persistence across reloads
+            saveRoomState(value, selectedLanguage.value)
+            
             // Emit code change to other users in the room
             socket.emit('code_change', {
                 room: roomId,
@@ -372,6 +389,12 @@ export default defineComponent({
                 currentUserId.value = newId
                 console.log('Socket ID updated:', newId)
             }
+        })
+
+        // Watch for language changes and save to localStorage
+        watch(selectedLanguage, (newLanguage) => {
+            console.log('📁 Language changed to:', newLanguage)
+            saveRoomState(code.value, newLanguage)
         })
 
         onMounted(() => {

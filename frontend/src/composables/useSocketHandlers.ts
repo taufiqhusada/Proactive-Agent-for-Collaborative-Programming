@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 import { debounce } from 'lodash'
 
-export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any, selectedLanguage: any, currentUserId: any, view: any, lastReceivedContent: any, isLocalUpdate: any, isReadOnly: any, setRemoteCursor: any, clearRemoteCursor: any, generateUserColor: any, showCodeAnalysisLineIndicators: any, showCodeAnalysis: any, currentCodeBlock: any) {
+export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any, selectedLanguage: any, currentUserId: any, view: any, lastReceivedContent: any, isLocalUpdate: any, isReadOnly: any, setRemoteCursor: any, clearRemoteCursor: any, generateUserColor: any, showCodeAnalysisLineIndicators: any, showCodeAnalysis: any, currentCodeBlock: any, saveRoomState?: (code: string, language: string) => void) {
   
   const handleRemoteCodeExecution = (data: any) => {
     console.log('📡 Handling remote code execution:', data)
@@ -196,6 +196,11 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
             lastReceivedContent.value = response.code
             isLocalUpdate.value = true
             code.value = response.code
+            
+            // Save server code to localStorage
+            if (saveRoomState) {
+              saveRoomState(response.code, selectedLanguage.value)
+            }
           } else {
             console.log('Server code matches local code, keeping current state')
           }
@@ -208,6 +213,11 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
         lastReceivedContent.value = delta
         isLocalUpdate.value = true
         code.value = delta
+        
+        // Save received code changes to localStorage for persistence
+        if (saveRoomState) {
+          saveRoomState(delta, selectedLanguage.value)
+        }
       }
     })
 
@@ -257,6 +267,11 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
             lastReceivedContent.value = response.code
             isLocalUpdate.value = true
             code.value = response.code
+            
+            // Save reconnected server code to localStorage
+            if (saveRoomState) {
+              saveRoomState(response.code, selectedLanguage.value)
+            }
           } else {
             console.log('After reconnection: Server code matches local code, keeping current state')
           }
