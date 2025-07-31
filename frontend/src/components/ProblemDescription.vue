@@ -108,7 +108,7 @@ export default defineComponent({
                     <ul>
                         <li><strong>Subtask 1:</strong> Given the user wants to buy one item, suggest which other item they should buy (by index) to use the gift card exactly.</li>
                         <li><strong>Subtask 2:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li>
-                        <li><strong>Subtask 3:</strong> Find the pair (by indices) that includes the highest-priced item possible. </li>
+                        <li><strong>Subtask 3:</strong> Find the pair (by indices) that includes the highest possible individual item price among all valid pairs that sum to the gift card value.</li>
                     </ul>
                 `,
                 examples: [
@@ -125,7 +125,7 @@ export default defineComponent({
                     {
                         input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
                         output: "[2,3]",
-                        explanation: "[2,3] is chosen because it includes 80, the highest single item in any valid pair summing to 100. No pair can be form with 90, so we chose to include 80 instead."
+                        explanation: "[2,3] is chosen because it includes price 80 (at index 3), which is the highest individual item price among all valid pairs. Valid pairs: [0,1] has max price 60, [2,3] has max price 80, so [2,3] wins."
                     }
                 ],
                 constraints: [
@@ -223,7 +223,8 @@ def find_all_pairs(prices, gift_card):
   return []
 
 def find_highest_pair(prices, gift_card):
-  #  Subtask 3: Find the pair that includes the highest-priced item possible
+  #  Subtask 3: Find the pair (by indices) that includes the highest individual item price among all valid pairs
+  #  Return empty list [] if no valid pairs exist
     
   return []
 
