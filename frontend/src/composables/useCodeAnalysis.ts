@@ -151,8 +151,8 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
     console.log('📋 Lines:', lines.length, 'Characters:', chars)
     
     // Relaxed size check for educational coding - either condition is enough
-    if (lines.length < 5 && chars < 200) {
-      console.log('❌ Failed size check: lines < 5 AND chars < 200')
+    if (lines.length < 5 && chars < 150) {
+      console.log('❌ Failed size check: lines < 5 AND chars < 150')
       return false
     }
     
