@@ -96,7 +96,7 @@
                                     :disabled="loading || !localCodeAnalysisSettings.enabled"
                                     min="0.5"
                                     step="0.5"
-                                    value="3"
+                                    value="2"
                                     max="100"
                                     class="time-input"
                                 > seconds
@@ -107,6 +107,7 @@
                         <input 
                             type="checkbox" 
                             v-model="localCodeAnalysisSettings.enabled"
+                            value="false"
                             :disabled="loading"
                         >
                         <span class="slider"></span>
