@@ -27,7 +27,7 @@
                                     v-model.number="localSettings.idle_intervention_delay"
                                     :disabled="loading || !localSettings.idle_intervention_enabled"
                                     min="1"
-                                    value="5"
+                                    value="3"
                                     max="60"
                                     class="time-input"
                                 > seconds
