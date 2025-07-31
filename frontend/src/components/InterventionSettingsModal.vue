@@ -142,7 +142,7 @@ export default defineComponent({
             type: Object,
             default: () => ({
                 idle_intervention_enabled: true,
-                idle_intervention_delay: 3,
+                idle_intervention_delay: 5,
                 progress_check_enabled: true,
                 progress_check_interval: 30
             })
@@ -154,7 +154,7 @@ export default defineComponent({
         const loading = ref(false)
         const localSettings = ref({
             idle_intervention_enabled: true,
-            idle_intervention_delay: 3,
+            idle_intervention_delay: 5,
             progress_check_enabled: true,
             progress_check_interval: 30
         })
