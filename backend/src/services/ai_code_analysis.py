@@ -37,7 +37,7 @@ class AICodeAnalysisService:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an expert code reviewer and pair programming partner. Analyze code blocks for potential issues, bugs, security vulnerabilities, performance problems, and best practice violations. Consider the problem context when evaluating whether code is appropriate - partial solutions and work-in-progress code should be judged differently than complete solutions. Provide practical, actionable suggestions."},
+                    {"role": "system", "content": "You are an expert code reviewer. Analyze for real errors only. Single loops through helper function results are efficient O(n). Only suggest optimization for actual nested loops (for i, for j patterns). Trust helper functions work correctly."},
                     {"role": "user", "content": analysis_prompt}
                 ],
                 max_tokens=1000,
@@ -125,80 +125,28 @@ class AICodeAnalysisService:
 
     def _create_code_analysis_prompt(self, code: str, language: str, context: Dict[str, Any], 
                                    problem_context: Optional[Dict[str, Any]] = None) -> str:
-        """Create a comprehensive prompt for code analysis"""
+        """Create a concise prompt for code analysis"""
         
-        problem_info = ""
-        if problem_context:
-            problem_info = f"""
-                            PROBLEM CONTEXT:
-                            Title: {problem_context.get('title', 'Unknown')}
-                            Description: {problem_context.get('description', 'No description provided')}
-
-                            IMPORTANT: This code is being written to solve the above problem. Consider whether the approach is:
-                            - Appropriate for the problem requirements
-                            - A reasonable work-in-progress solution
-                            - Following expected algorithmic patterns for this type of problem
-                            - Missing key components needed for the solution
-
-                            """
+        # Keep it simple - no verbose problem context
         
-        return f"""
-                Analyze this {language} code block for learning purposes:
+        return f"""Analyze this {language} code:
+```{language}
+{code}
+```
 
-                ```{language}
-                {code}
-                ```
+Problem: {problem_context.get('title', 'Unknown') if problem_context else 'General coding'}
 
-                Context:
-                - Lines: {context.get('startLine', 1)}-{context.get('endLine', 1)}
-                - Cursor position: Line {context.get('cursorLine', 1)}
+CRITICAL RULES:
+- Trust helper functions (find_all_pairs() returns valid pairs)
+- Max-finding algorithms using single loops are EFFICIENT and CORRECT
+- ONLY suggest hashmap for actual nested loops (for i in range, for j in range pattern)
+- Single loop iterating through function results = O(n) = EFFICIENT
+- Don't flag: style, comments, missing subtasks, working algorithms
 
-                {problem_info}
+Only flag: undefined variables, syntax errors, actual logic bugs
 
-                IMPORTANT: Focus on functional correctness, logic, and learning opportunities.
-                DO NOT comment on:
-                - Naming conventions (camelCase vs snake_case is fine)
-                - Missing comments (code can be self-explanatory)
-                - Code style preferences (spacing, formatting)
-                - Code organization preferences
-
-                Analyze for learning purposes:
-                1. **Undefined Variables**: Variables used but not defined
-                2. **Logic Errors**: Algorithm mistakes, wrong loop bounds, incorrect conditions
-                3. **Syntax Errors**: Missing parentheses, colons, indentation errors
-                4. **Runtime Errors**: Index out of bounds, division by zero, type errors
-                5. **Algorithm Optimization**: ONLY suggest optimizations for ACTUAL performance issues
-
-                CRITICAL: Before suggesting optimizations, carefully analyze the actual time complexity:
-                - A SINGLE loop iterating through an array is O(n), NOT O(n²)
-                - O(n²) requires NESTED loops or repeated operations inside loops
-                - Don't assume complexity without analyzing the actual code structure
-                - Consider the specific problem context - some O(n) solutions are optimal
-
-                If the code is functionally correct and reasonably efficient, respond with positive feedback.
-
-                Format as JSON:
-                {{
-                "issue": {{
-                    "title": "Brief title covering main problem(s) or 'Code looks good!'",
-                    "description": "Concise explanation of what's wrong OR positive feedback (1-2 sentences)",
-                    "hint": "Quick practical solution OR encouragement (1-2 sentences)"
-                }}
-                }}
-
-                If code is good, return positive feedback like:
-                {{"issue": {{"title": "Code looks good!", "description": "Your solution is working correctly and follows good algorithmic practices.", "hint": "Great work! This approach should solve the problem effectively."}}}}
-
-                Examples of VALID issues:
-                - "Logic Error: Loop condition 'i <= len(arr)' causes index error. Hint: Use 'i < len(arr)'."
-                - "Undefined Variable: Variable 'n' used but not defined. Hint: Use len(arr) instead."
-                
-                Examples of INVALID issues (DO NOT report):
-                - Variable naming conventions
-                - Missing comments
-                - Code formatting/style
-                - Single loop optimizations when the loop is already O(n) and appropriate
-                """
+JSON: {{"issue": {{"title": "...", "description": "...", "hint": "..."}}}}
+Good code: {{"issue": {{"title": "Code looks good!", "description": "Correct and efficient.", "hint": "Well done!"}}}}"""
 
     def _parse_code_analysis(self, analysis_text: str, code: str, context: Dict[str, Any], 
                            problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -288,42 +236,28 @@ class AICodeAnalysisService:
             if not has_error and not problem_context:
                 return None  # Don't analyze successful code without knowing what it should do
             
-            prompt = f"""Analyze this code execution with subtask awareness:
+            prompt = f"""Code execution analysis:
 
-                    Code: {code[:500]}
-                    Problem Context: {problem_context or 'General coding task'}
-                    Execution Success: {result.get('success', True)}
-                    Output: {output[:300] if output else 'No output'}
-                    Error: {error[:300] if error else 'No error'}
+Code: {code}
+Problem: {problem_context or 'General coding'}
+Success: {result.get('success', True)}
+Output: {output if output else 'None'}
+Error: {error if error else 'None'}
 
-                    SUBTASK ANALYSIS INSTRUCTIONS:
-                    1. Identify which part/subtask of the problem this code addresses
-                    2. Check if this subtask is correctly implemented
-                    3. If working on a multi-step problem (like Two Sum with multiple test cases):
-                       - Does code handle the first test case correctly?
-                       - Does it handle edge cases or additional requirements?
-                       - Is it ready for the next subtask/optimization?
+CRITICAL RULES:
+- Trust helper functions (find_all_pairs() works correctly)
+- Single loops through function results = EFFICIENT O(n)
+- ONLY suggest hashmap for actual nested for loops (for i, for j pattern)
+- Max-finding with single loop = CORRECT and EFFICIENT
 
+Response (max 150 chars):
+- Errors: "Fix: [issue]"
+- Wrong output: "Output: [issue]"
+- Actual inefficiency: "Optimize: [suggestion]"
+- Working efficiently: "correct"
 
-                    Instructions:
-                    - If syntax/runtime errors: suggest the fix:
-                    * "Fix: [issue]"
-                    - If code runs but gives incorrect output (i.e., doesn’t meet requirements):
-                    * "Output: [why the output is incorrect, and what it should be]"
-                    - If code works but has ACTUAL performance issues, suggest optimization:
-                    * ONLY suggest optimization for GENUINE O(n²) patterns (nested loops)
-                    * A single loop is O(n) and often optimal - don't suggest hash maps unnecessarily
-                    * Consider the problem context - some algorithms require certain approaches
-                    - Only return "correct" if code is both working AND reasonably efficient
-
-                    Provide analysis (max 150 characters):
-                    - Error: "Fix: [issue]"
-                    - Wrong output: "Output: [issue]" 
-                    - Inefficient: "Optimize: [suggestion]"
-                    - Good code: "correct"
-
-                    Examples: "Fix: Missing )", "Subtask 1: output does not match the requirement, fix: ...", "Optimize Subtask 1: Use hash map", "correct"
-                    """
+Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace nested loops with hashmap, subtask 3: ..."
+"""
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = self.client.chat.completions.create(
@@ -365,70 +299,6 @@ class AICodeAnalysisService:
         except Exception as e:
             logging.error(f"Error in panel analysis: {e}")
             return None
-
-    def analyze_code_execution_async_optimized(self, code: str, execution_result: Dict[str, Any], 
-                                                   problem_context: Optional[str] = None, 
-                                                   room_id: Optional[str] = None) -> Dict[str, Any]:
-        """OPTIMIZED: Single AI call for analysis + help message generation"""
-        if not self.client:
-            return {"needs_help": False, "help_message": ""}
-            
-        try:
-            # Get attempt count for context
-            attempts = self.execution_attempts.get(room_id, 1) if room_id else 1
-            
-            # OPTIMIZATION: Include problem context but keep prompt concise
-            prompt = f"""Analyze code execution for correctness:
-
-                        Code: {code}
-                        Problem: {problem_context or 'General coding task'}
-                        Success: {execution_result.get('success', False)}
-                        Output: {execution_result.get('output', '')}
-                        Error: {execution_result.get('error', '')}
-                        Attempt: {attempts}
-
-                        Check: Does code solve the problem correctly? Any errors?
-
-                        JSON response:
-                        {{"needs_help": boolean, "is_correct": boolean, "help_message": "brief help (max 25 words) or empty if correct"}}"""
-
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,  # Slightly higher for problem-aware analysis
-                temperature=0.3  # Very low for consistency
-            )
-            
-            return self._parse_execution_analysis_fast(response.choices[0].message.content.strip())
-            
-        except Exception as e:
-            logging.error(f"Error in optimized analysis: {e}")
-            return {"needs_help": True, "is_correct": False, "help_message": "Need help? 🐛"}
-
-    def _parse_execution_analysis_fast(self, analysis_text: str) -> Dict[str, Any]:
-        """Fast parser for optimized execution analysis"""
-        try:
-            # Try to extract JSON
-            json_start = analysis_text.find('{')
-            json_end = analysis_text.rfind('}') + 1
-            
-            if json_start >= 0 and json_end > json_start:
-                json_str = analysis_text[json_start:json_end]
-                return json.loads(json_str)
-            else:
-                # Quick fallback
-                return {
-                    "needs_help": True,
-                    "is_correct": False,
-                    "help_message": "Need help? 🤖"
-                }
-                
-        except Exception:
-            return {
-                "needs_help": True,
-                "is_correct": False,
-                "help_message": "Having trouble? 🐛"
-            }
 
     def start_panel_analysis(self, room_id: str, code: str, result: dict, conversation_history):
         """Start non-blocking AI analysis for execution panel"""
@@ -485,73 +355,6 @@ class AICodeAnalysisService:
                 
         except Exception as e:
             logging.error(f"Error in panel analysis background task: {e}")
-
-    def handle_code_execution_validation_optimized(self, room_id: str, code: str, 
-                                                        execution_result: Dict[str, Any],
-                                                        conversation_history, send_help_callback) -> None:
-        """OPTIMIZED: Single AI call, faster message delivery"""
-        try:
-            # Get current problem context
-            context = conversation_history.get(room_id)
-            if not context:
-                from .ai_models import ConversationContext
-                context = ConversationContext([], room_id)
-                conversation_history[room_id] = context
-                
-            problem_context = context.problem_description or context.problem_title
-            
-            # OPTIMIZATION: Single AI call that analyzes AND generates help message
-            analysis = self.analyze_code_execution_async_optimized(
-                code, execution_result, problem_context, room_id
-            )
-            
-            print(f"🔍 Optimized analysis result: {analysis}")
-
-            # Track attempts for graduated help
-            if room_id not in self.execution_attempts:
-                self.execution_attempts[room_id] = 0
-                
-            # Only offer help if needed and not correct
-            if analysis.get('needs_help', False) and not analysis.get('is_correct', True):
-                self.execution_attempts[room_id] += 1
-                
-                # OPTIMIZATION: Skip the wait and activity check for faster response
-                help_message = analysis.get('help_message', '')
-                if help_message.strip():
-                    # Send help message via callback
-                    send_help_callback(room_id, help_message)
-            else:
-                # Reset attempts if code is correct
-                self.execution_attempts[room_id] = 0
-                
-        except Exception as e:
-            logging.error(f"Error in optimized code execution validation: {e}")
-
-    def start_execution_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any],
-                                           conversation_history, send_help_callback) -> None:
-        """OPTIMIZED: Start validation with minimal overhead"""
-        try:
-            if self.socketio:
-                # Use the optimized validation method
-                self.socketio.start_background_task(
-                    self._run_async_validation_optimized, room_id, code, execution_result,
-                    conversation_history, send_help_callback
-                )
-                print(f"🚀 Started optimized AI validation for room {room_id}")
-        except Exception as e:
-            logging.error(f"Error starting optimized validation: {e}")
-
-    def _run_async_validation_optimized(self, room_id: str, code: str, execution_result: Dict[str, Any],
-                                      conversation_history, send_help_callback) -> None:
-        """OPTIMIZED: Direct execution without event loop"""
-        try:
-            # Run the validation directly
-            self.handle_code_execution_validation_optimized(
-                room_id, code, execution_result, conversation_history, send_help_callback
-            )
-            
-        except Exception as e:
-            logging.error(f"Error in optimized validation thread: {e}")
 
     def reset_execution_tracking(self, room_id: str):
         """Reset execution tracking for a room"""
