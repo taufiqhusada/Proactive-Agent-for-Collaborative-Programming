@@ -2007,6 +2007,12 @@ export default defineComponent({
                 
                 if (response.ok && result.success) {
                     console.log('✅ Session started successfully:', result)
+                    
+                    // Automatically enable auto recording if speech is supported
+                    if (speechSupported.value && !autoRecordingEnabled.value) {
+                        console.log('🎤 Auto-enabling voice recording for new session')
+                        toggleAutoRecording()
+                    }
                 } else {
                     console.error('❌ Failed to start session:', result.error)
                 }
