@@ -3,6 +3,7 @@ app.py - Backend for remote pair programming
 """
 
 import os
+import sys
 import subprocess
 import threading
 import time
@@ -15,6 +16,8 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from services.ai_agent import init_ai_agent, get_ai_agent
 from services.scaffolding_service import ScaffoldingService
 from services.individual_ai_service import init_individual_ai_service, get_individual_ai_service
+from database.db import init_db, close_db
+from database.models import CodeExecution
 
 load_dotenv()
 
@@ -115,6 +118,9 @@ manager = ConnectionManager()
 ai_agent = init_ai_agent(socketio)
 scaffolding_service = ScaffoldingService()
 individual_ai_service = init_individual_ai_service(socketio)
+
+# Initialize Database
+init_db()
 
 # Initialize Reflection Service
 from services.ai_reflection import init_reflection_service
@@ -577,7 +583,7 @@ def individual_ai_chat():
                 "error": "Individual AI mode is not active for this room",
                 "wrongMode": True,
                 "currentMode": current_ai_mode
-            }), 403
+            }, 403)
         
         # Get AI response synchronously
         ai_response = individual_ai_service.handle_individual_message_sync(
@@ -633,6 +639,23 @@ def execute_code_endpoint():
         
         # Execute code based on language
         result = execute_code(code, language)
+        
+        # Save code execution to database
+        if room_id:
+            try:
+                code_execution = CodeExecution(
+                    room_id=room_id,
+                    code=code,
+                    language=language,
+                    timestamp=datetime.utcnow(),
+                    execution_output=result.get('output', ''),
+                    execution_error=result.get('error', ''),
+                    execution_time_ms=int(result.get('executionTime', 0))
+                )
+                code_execution.save()
+                print(f"💾 Saved code execution to database for room {room_id}")
+            except Exception as db_error:
+                print(f"⚠️  Database save error (non-blocking): {db_error}")
         
         # Trigger panel analysis for execution feedback (non-blocking)
         if room_id and ai_agent and code.strip():
@@ -1133,5 +1156,35 @@ def update_intervention_settings():
         print(f"❌ Error updating intervention settings: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/code-executions/<room_id>', methods=['GET'])
+def get_code_executions(room_id):
+    """Get code execution history for a specific room"""
+    try:
+        # Get query parameters for pagination and filtering
+        limit = request.args.get('limit', 50, type=int)
+        skip = request.args.get('skip', 0, type=int)
+        
+        # Query code executions for the room, ordered by timestamp (newest first)
+        executions = CodeExecution.objects(room_id=room_id).order_by('-timestamp').skip(skip).limit(limit)
+        
+        # Convert to dictionaries for JSON response
+        execution_list = [execution.to_dict() for execution in executions]
+        
+        return jsonify({
+            'success': True,
+            'room_id': room_id,
+            'executions': execution_list,
+            'count': len(execution_list),
+            'total': CodeExecution.objects(room_id=room_id).count()
+        })
+        
+    except Exception as e:
+        print(f"❌ Error retrieving code executions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    try:
+        socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    finally:
+        # Clean up database connection on shutdown
+        close_db()

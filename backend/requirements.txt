@@ -11,3 +11,4 @@ PyJWT
 Flask-SocketIO
 flask_jwt_extended
 eventlet
+pymongo
