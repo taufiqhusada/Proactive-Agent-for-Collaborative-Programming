@@ -5,12 +5,19 @@
                 <!-- <span class="problem-icon">🎯</span> -->
                 <h5>Problem Description</h5>
             </div>
-            <div class="problem-selector">
+            <div class="problem-selector" style="position: relative;">
                 <select v-model="selectedProblem" @change="onProblemChange" class="problem-select">
                     <option v-for="(problem, index) in problems" :key="index" :value="index">
                         {{ problem.title }}
                     </option>
                 </select>
+                <div v-if="showResetPopup" class="reset-popup">
+                    <span>Reset code to template for this problem?</span>
+                    <div class="reset-popup-buttons">
+                        <button @click="confirmReset(true)">Yes</button>
+                        <button @click="confirmReset(false)">No</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -58,7 +65,7 @@ import { defineComponent, ref, computed, onMounted, watch } from 'vue'
 
 export default defineComponent({
     name: 'ProblemDescription',
-    emits: ['problem-changed', 'boilerplate-changed'],
+    emits: ['problem-changed', 'boilerplate-changed', 'reset-confirmed'],
     props: {
         selectedProblem: {
             type: Number,
@@ -306,37 +313,47 @@ print(first_repeated_number(nums))
 
         const currentProblem = computed(() => problems.value[selectedProblem.value])
 
+        const showResetPopup = ref(false)
+        let pendingProblemIndex = null
+
         const onProblemChange = () => {
-            emit('problem-changed', {
-                problemIndex: selectedProblem.value,
-                problem: currentProblem.value
-            })
+            showResetPopup.value = true
+            pendingProblemIndex = selectedProblem.value
+        }
+
+        const confirmReset = (shouldReset) => {
+            showResetPopup.value = false
+            if (pendingProblemIndex !== null) {
+                emit('problem-changed', {
+                    problemIndex: pendingProblemIndex,
+                    problem: problems.value[pendingProblemIndex]
+                })
+                if (shouldReset && problemBoilerplates[pendingProblemIndex]) {
+                    emit('boilerplate-changed', problemBoilerplates[pendingProblemIndex])
+                }
+                pendingProblemIndex = null
+            }
         }
 
         // Emit initial problem on mount
         onMounted(() => {
-            onProblemChange()
+            emit('problem-changed', {
+                problemIndex: selectedProblem.value,
+                problem: currentProblem.value
+            })
         })
 
         watch(() => props.selectedProblem, (newVal) => {
             selectedProblem.value = newVal
         })
 
-        watch(selectedProblem, (newIndex) => {
-            if (problemBoilerplates[newIndex]) {
-                emit('boilerplate-changed', problemBoilerplates[newIndex]);
-            }
-            emit('problem-changed', {
-                problemIndex: newIndex,
-                problem: problems.value[newIndex]
-            })
-        });
-
         return {
             selectedProblem,
             problems,
             currentProblem,
-            onProblemChange
+            onProblemChange,
+            showResetPopup,
+            confirmReset
         }
     }
 })
@@ -382,6 +399,7 @@ print(first_repeated_number(nums))
     display: flex;
     align-items: center;
     flex-shrink: 0;
+    position: relative;
 }
 
 .problem-select {
@@ -535,6 +553,54 @@ print(first_repeated_number(nums))
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 0.875em;
     color: #d97706;
+}
+
+.reset-popup {
+    position: absolute;
+    top: 110%;
+    right: 0;
+    left: auto;
+    min-width: 320px;
+    max-width: 420px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 1rem 1.25rem;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.75rem;
+    font-size: 1em;
+    white-space: pre-line;
+    word-break: break-word;
+}
+.reset-popup span {
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+    text-align: right;
+}
+.reset-popup-buttons {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    width: 100%;
+    justify-content: flex-end;
+}
+.reset-popup button {
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.35rem 1.1rem;
+    cursor: pointer;
+    font-size: 1em;
+    margin-right: 0;
+}
+.reset-popup button:last-child {
+    background: #e5e7eb;
+    color: #1f2937;
 }
 
 /* Scrollbar styling */
