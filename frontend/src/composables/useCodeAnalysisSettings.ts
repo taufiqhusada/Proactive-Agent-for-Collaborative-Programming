@@ -2,7 +2,7 @@ import { ref, watch } from 'vue'
 
 // Frontend-only settings for code analysis
 const codeAnalysisSettings = ref({
-  enabled: true,
+  enabled: false,
   delay: 2 // seconds
 })
 
