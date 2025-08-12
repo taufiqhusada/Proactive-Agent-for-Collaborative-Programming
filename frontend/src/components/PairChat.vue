@@ -6,7 +6,7 @@
                 {{ getChatTitle() }}
             </h6>
             <div class="header-controls">
-                <div class="online-users">
+                <div v-if="!individualMode" class="online-users">
                     <span class="user-count">{{ onlineUsers }} online</span>
                 </div>
                 
@@ -92,6 +92,7 @@
         </div>
 
         <div class="chat-messages" ref="messagesContainer">
+            
             <div v-for="message in messages" :key="message.id" class="message-wrapper">
                 <div 
                     :class="[
@@ -109,11 +110,11 @@
                         <span class="username">
                             <span v-if="message.isAI && message.isExecutionHelp" class="ai-badge">🔍</span>
                             <span v-else-if="message.isAI" class="ai-badge">👨‍💻</span>
-                            {{ message.username }}
+                            {{ message.username || 'Unknown' }}
                         </span>
                         <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
                     </div>
-                    <div class="message-content">{{ message.content }}</div>
+                    <div class="message-content">{{ message.content || 'No content' }}</div>
                 </div>
             </div>
             <div v-if="messages.length === 0" class="empty-chat">
@@ -210,7 +211,7 @@
                     <span class="ai-text">Bob speaking (recording paused)</span>
                 </div>
                 <div v-if="currentAutoTranscript && autoRecordingEnabled && !isSpeaking" class="auto-transcript">
-                    <strong>Voice:</strong> "{{ currentAutoTranscript }}"
+                    <span class="voice-label">Voice:</span> "{{ currentAutoTranscript }}"
                 </div>
                 <div v-if="isProcessingSpeech" class="processing-indicator">
                     <span class="processing-text">Processing speech...</span>
@@ -227,7 +228,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { aiModeService } from '../services/aiModeService'
 
 export default defineComponent({
@@ -346,7 +347,7 @@ export default defineComponent({
             if (props.noAiMode) {
                 return 'Team Chat (No AI)'
             } else if (props.individualMode) {
-                return 'Team Chat (Human Only)'
+                return 'Personal AI Chat'
             } else {
                 return 'Team Chat'
             }
@@ -426,7 +427,7 @@ export default defineComponent({
             })
         }
 
-        const sendMessage = () => {
+        const sendMessage = async () => {
             if (!newMessage.value.trim() || !props.socket) return
 
             // Reset typing state since message is being sent
@@ -436,17 +437,24 @@ export default defineComponent({
                 typingTimer = null
             }
 
+            const messageContent = newMessage.value.trim()
+            newMessage.value = ''
+
+            // Use the same socket logic for all modes, just different room handling
             const message = {
                 id: Date.now(),
-                content: newMessage.value.trim(),
+                content: messageContent,
                 userId: props.currentUserId,
                 username: props.username,
                 timestamp: new Date().toISOString(),
-                room: props.roomId
+                room: props.roomId  // Backend will handle personal room creation internally
             }
 
             // Add to local messages immediately
             messages.value.push(message)
+            
+            // Force Vue reactivity by creating a new array reference
+            messages.value = [...messages.value]
             
             // Add reflection flag if in reflection mode
             if (props.reflectionSessionId) {
@@ -455,65 +463,65 @@ export default defineComponent({
             } else {
                 console.log('🎓 NOT REFLECTION MODE: reflectionSessionId is empty/undefined:', props.reflectionSessionId)
             }
+
+            // Add individual mode flag for backend processing
+            if (props.individualMode) {
+                message.isIndividualMode = true
+                console.log('🤖 INDIVIDUAL MODE: Adding isIndividualMode=true flag')
+            }
             
             console.log('Sending message via socket:', message)
             console.log('Socket connected:', props.socket.connected)
             console.log('Socket namespace:', props.socket.nsp)
             
-            // Send regular chat message (no special reflection handling)
+            // Send chat message via socket (same as shared mode)
             props.socket.emit('chat_message', message)
 
-            timerStarted.value = true
-            console.log('🕐 Timer started - message sent, waiting for voice activity to cancel')
+            if (!props.individualMode) {
+                timerStarted.value = true
+                console.log('🕐 Timer started - message sent, waiting for voice activity to cancel')
+            }
             
-            newMessage.value = ''
             scrollToBottom()
         }
 
         const handleIncomingMessage = (message) => {
-            console.log(`📨 PairChat [${props.individualMode ? 'Individual' : 'Shared'}] handling message:`, {
-                isAI: message.isAI,
-                userId: message.userId,
-                currentUserId: props.currentUserId,
-                content: message.content?.substring(0, 50) + '...',
-                mode: aiModeService.getCurrentMode()
-            })
-            
             // Don't add our own messages again
             if (message.userId === props.currentUserId) {
-                console.log(`🚫 Skipping own message from user ${message.userId}`)
                 return
             }
             
-            // AI MODE ROUTING: In Personal AI mode, route AI messages to personal chat
-            if (message.isAI && aiModeService.isIndividualMode()) {
-                console.log(`🤖 Personal AI Mode: AI message received by ${props.individualMode ? 'Individual' : 'Shared'} instance`)
-                
-                // Send to individual AI chat instead of team chat
-                if (window.dispatchEvent) {
-                    window.dispatchEvent(new CustomEvent('ai-message-for-personal-chat', {
-                        detail: {
-                            content: message.content,
-                            timestamp: message.timestamp,
-                            hasAudio: message.hasAudio || false,
-                            isReflection: message.isReflection || false,
-                            isExecutionHelp: message.isExecutionHelp || false
-                        }
-                    }))
+            // Enhanced AI detection - check both isAI flag and AI user IDs
+            const isAIMessage = message.isAI || message.userId === 'ai_agent_bob' || message.userId === 'ai_agent' || message.username?.includes('AI Assistant')
+            
+            // AI MODE ROUTING: In Personal AI mode, show AI messages in the single chat
+            if (isAIMessage && aiModeService.isIndividualMode()) {
+                try {
+                    // In personal mode with single chat layout, just add the message normally
+                    messages.value.push(message)
+                    
+                    // Force Vue reactivity by creating a new array reference
+                    messages.value = [...messages.value]
+                    
+                    // Force reactivity update
+                    nextTick(() => {
+                        scrollToBottom()
+                    })
+                } catch (error) {
+                    console.error('🚫 Error adding AI message to array:', error)
                 }
-                
-                // DON'T add to team chat and DON'T play audio - just return early
                 return
             }
-            
-            console.log(`✅ Adding message to ${props.individualMode ? 'Individual' : 'Shared'} chat`)
             
             // Normal shared mode processing
             messages.value.push(message)
             
+            // Force Vue reactivity by creating a new array reference
+            messages.value = [...messages.value]
+            
             // Don't use browser TTS for AI messages with hasAudio flag
             // The audio will come separately via ai_speech event
-            if (message.isAI && !message.hasAudio && aiVoiceEnabled.value) {
+            if (isAIMessage && !message.hasAudio && aiVoiceEnabled.value) {
                 // Only play audio in shared mode
                 if (aiModeService.isSharedMode()) {
                     speakMessage(message.content, true)
@@ -2201,10 +2209,7 @@ export default defineComponent({
 
         // Filter messages based on mode
         const filteredMessages = computed(() => {
-            if (props.individualMode) {
-                // In individual mode, filter out AI messages (they go to separate AI chat)
-                return messages.value.filter(message => !message.isAI)
-            }
+            // Since we now use single chat layout for both modes, show all messages
             return messages.value
         })
 
@@ -2819,29 +2824,47 @@ export default defineComponent({
 
 .voice-feedback {
     margin-top: 0.5rem;
-    padding: 0.75rem;
-    background: rgba(239, 68, 68, 0.05);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(229, 231, 235, 0.5);
+    border-radius: 6px;
 }
 
 .listening-indicator {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: #ef4444;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    font-weight: 400;
+    margin-bottom: 0.25rem;
 }
 
 .mic-icon {
-    font-size: 1rem;
+    font-size: 0.875rem;
     animation: pulse 1.5s infinite;
 }
 
 .listening-text {
-    color: #ef4444;
+    color: #9ca3af;
+}
+
+.ai-speaking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    font-weight: 400;
+    margin-bottom: 0.25rem;
+}
+
+.ai-icon {
+    font-size: 0.875rem;
+}
+
+.ai-text {
+    color: #9ca3af;
 }
 
 .live-transcript {
@@ -2856,14 +2879,20 @@ export default defineComponent({
 }
 
 .auto-transcript {
-    font-size: 0.875rem;
-    color: #374151;
+    font-size: 0.75rem;
+    color: #9ca3af;
     font-style: italic;
-    padding: 0.5rem;
-    background: rgba(255, 255, 255, 0.7);
+    padding: 0.375rem 0.5rem;
+    background: rgba(255, 255, 255, 0.9);
     border-radius: 4px;
-    border-left: 3px solid #10b981;
-    margin-bottom: 0.5rem;
+    border-left: 2px solid #d1d5db;
+    margin-bottom: 0.25rem;
+}
+
+.voice-label {
+    font-weight: 500;
+    font-style: normal;
+    color: #9ca3af;
 }
 
 .processing-indicator {

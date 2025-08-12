@@ -6,7 +6,9 @@
                   Code and Learn 
                   <span class="highlight-together">Together</span>
                 </h1>
+                
                 <p class="powered-by">Powered by human + human + AI</p>
+               
                 <!-- <p class="room-id">Room: {{ roomId }}</p> -->
             </div>
             <div class="controls">
@@ -509,6 +511,11 @@ export default defineComponent({
 
 .highlight-together {
     color: #667eea;
+    font-weight: 600;
+}
+
+.highlight-personal {
+    color: #48bb78;
     font-weight: 600;
 }
 

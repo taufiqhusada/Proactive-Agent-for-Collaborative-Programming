@@ -261,25 +261,58 @@ def ws_chat_message(data):
     """
     print(f"WS chat message from {request.sid} in room {data['room']}")
     room = data["room"]
+    user_id = data.get("userId", request.sid)
+    is_individual_mode = data.get("isIndividualMode", False)
     
-    # Broadcast chat message - include self for system messages, exclude for regular messages
-    include_self = data.get('isSystem', False)
-    emit("chat_message", data, room=room, include_self=include_self)
-    
-    # Check AI mode before processing with AI agent
-    current_ai_mode = manager.get_ai_mode(room)
-    
-    # Only process with AI if not in 'none' mode
-    if current_ai_mode != 'none':
-        # Process message with AI agent in a separate thread
-        def process_ai_message():
-            print(f"🤖 Processing AI message for room {room} (mode: {current_ai_mode})")
-            ai_agent.process_message_sync(data)
-            print(f"🤖 AI message processing completed for room {room}")
+    if is_individual_mode:
+        print(f"🤖 Individual mode message detected from user {user_id}")
+        # For individual mode, create a personal room for AI processing
+        personal_room = f"{room}_personal_{user_id}"
         
-        threading.Thread(target=process_ai_message, daemon=True).start()
+        # Update the message to use the personal room for AI processing
+        personal_message = data.copy()
+        personal_message["room"] = personal_room
+        
+        # Don't broadcast individual mode messages to other users - keep them private
+        print(f"🤖 Processing individual message in personal room: {personal_room}")
+        
+        # Get current AI mode for the original room
+        current_ai_mode = manager.get_ai_mode(room)
+        
+        # Only process with AI if in individual mode
+        if current_ai_mode == 'individual':
+            # Copy context from original room to personal room if needed
+            individual_ai_service.copy_room_context_to_personal(room, user_id)
+            
+            # Process message with AI agent in personal room in a separate thread
+            def process_individual_ai_message():
+                print(f"🤖 Processing individual AI message for personal room {personal_room}")
+                ai_agent.process_message_sync(personal_message)
+                print(f"🤖 Individual AI message processing completed for personal room {personal_room}")
+            
+            threading.Thread(target=process_individual_ai_message, daemon=True).start()
+        else:
+            print(f"🚫 Skipping AI processing - AI mode is '{current_ai_mode}', expected 'individual'")
     else:
-        print(f"🚫 Skipping AI processing for room {room} - AI mode is 'none'")
+        # Regular shared mode - broadcast to everyone and process normally
+        # Broadcast chat message - include self for system messages, exclude for regular messages
+        include_self = data.get('isSystem', False)
+        emit("chat_message", data, room=room, include_self=include_self)
+        
+        # Check AI mode before processing with AI agent
+        current_ai_mode = manager.get_ai_mode(room)
+        
+        # Only process with AI if not in 'none' mode
+        if current_ai_mode != 'none':
+            # Process message with AI agent in a separate thread
+            def process_ai_message():
+                print(f"🤖 Processing AI message for room {room} (mode: {current_ai_mode})")
+                ai_agent.process_message_sync(data)
+                print(f"🤖 AI message processing completed for room {room}")
+            
+            threading.Thread(target=process_ai_message, daemon=True).start()
+        else:
+            print(f"🚫 Skipping AI processing for room {room} - AI mode is 'none'")
 
 @socketio.on("ai_mode_changed", namespace="/ws")
 def ws_ai_mode_changed(data):
@@ -546,7 +579,7 @@ def login():
 @app.route("/api/individual-ai", methods=["POST"])
 def individual_ai_chat():
     """
-    Handle individual AI assistant messages via REST API.
+    Handle individual AI assistant messages via REST API using separate room IDs.
     Accepts JSON: {
         "userId": "user_id",
         "roomId": "room_id", 
@@ -568,34 +601,51 @@ def individual_ai_chat():
                 "error": "Missing required fields: userId, roomId, message"
             }), 400
         
-        # Check AI mode for the room
-        current_ai_mode = manager.get_ai_mode(room_id)
+        # Extract original room ID from the personal room ID if it's already in personal format
+        original_room_id = room_id
+        if "_personal_" in room_id:
+            original_room_id = room_id.split("_personal_")[0]
+        
+        # Check AI mode for the original room
+        current_ai_mode = manager.get_ai_mode(original_room_id)
         if current_ai_mode == 'none':
-            print(f"🚫 Individual AI disabled - AI mode is 'none' for room {room_id}")
+            print(f"🚫 Individual AI disabled - AI mode is 'none' for room {original_room_id}")
             return jsonify({
                 "error": "AI assistance is disabled for this room",
                 "aiModeDisabled": True
             }), 403
         
         if current_ai_mode != 'individual':
-            print(f"🚫 Individual AI not available - AI mode is '{current_ai_mode}' for room {room_id}")
+            print(f"🚫 Individual AI not available - AI mode is '{current_ai_mode}' for room {original_room_id}")
             return jsonify({
                 "error": "Individual AI mode is not active for this room",
                 "wrongMode": True,
                 "currentMode": current_ai_mode
-            }, 403)
+            }), 403
         
-        # Get AI response synchronously
+        print(f"🤖 Processing individual AI request for room {room_id}, original room: {original_room_id}")
+        print(f"🤖 User ID: {user_id}, Message: {message[:50]}...")
+        
+        # Copy context from original room to personal room first (if needed)
+        individual_ai_service.copy_room_context_to_personal(original_room_id, user_id)
+        
+        # Get AI response synchronously using personal room ID
+        print(f"🤖 Calling individual AI service...")
         ai_response = individual_ai_service.handle_individual_message_sync(
-            user_id, room_id, message
+            user_id, original_room_id, message
         )
         
+        print(f"🤖 Individual AI response received: {ai_response[:100] if ai_response else 'None'}...")
+        
         if ai_response:
-            return jsonify({
+            response_data = {
                 "response": ai_response,
                 "timestamp": datetime.now().isoformat()
-            })
+            }
+            print(f"🤖 Sending successful response: {response_data}")
+            return jsonify(response_data)
         else:
+            print("❌ No AI response generated")
             return jsonify({
                 "error": "Failed to generate AI response"
             }), 500

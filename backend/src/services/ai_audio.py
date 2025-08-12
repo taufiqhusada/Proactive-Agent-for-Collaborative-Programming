@@ -252,7 +252,41 @@ class AIAudioService:
             context.last_ai_response = datetime.now()
             print(f"🔒 AI RESPONSE: Tracking response time for cooldown in room {room_id}")
         
-        # Send message immediately (don't wait for audio)
+        print(f"🤖 Sending AI message with audio to room {room_id}: {content[:50]}...")
+        
+        # For personal rooms, extract user ID and send to specific user
+        if "_personal_" in room_id:
+            # Extract user ID from personal room ID: room123_personal_userID
+            parts = room_id.split("_personal_")
+            if len(parts) == 2:
+                original_room = parts[0] 
+                user_id = parts[1]
+                print(f"🤖 Personal room detected - sending with audio to user {user_id} in original room {original_room}")
+                
+                # Update message room to original room for frontend display
+                message['room'] = original_room
+                
+                # Send to specific user only
+                self.socketio.emit('chat_message', message, room=user_id, namespace='/ws')
+                
+                # Generate audio for the personal user
+                def generate_and_stream_audio():
+                    try:
+                        self.generate_streaming_speech(content, user_id, message['id'])  # Use user_id as target
+                    except Exception as e:
+                        print(f"Error in audio generation: {e}")
+                        # Fallback to simple notification that audio failed
+                        self.socketio.emit('ai_audio_error', {
+                            'messageId': message['id'],
+                            'room': original_room,
+                            'error': 'Audio generation failed'
+                        }, room=user_id, namespace='/ws')
+                
+                # Start audio generation in background thread
+                threading.Thread(target=generate_and_stream_audio, daemon=True).start()
+                return message
+        
+        # Regular shared room - send to all users in the room
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
         
         # Generate audio in parallel (non-blocking)
@@ -294,8 +328,26 @@ class AIAudioService:
         # Update last response time for non-greeting messages
         if conversation_history and room_id in conversation_history:
             conversation_history[room_id].last_ai_response = datetime.now()
-            
-        # Emit the message to the room (no audio)
+        
+        print(f"🤖 Sending text-only AI message to room {room_id}: {content[:50]}...")
+        
+        # For personal rooms, extract user ID and send to specific user
+        if "_personal_" in room_id:
+            # Extract user ID from personal room ID: room123_personal_userID
+            parts = room_id.split("_personal_")
+            if len(parts) == 2:
+                original_room = parts[0] 
+                user_id = parts[1]
+                print(f"🤖 Personal room detected - sending to user {user_id} in original room {original_room}")
+                
+                # Update message room to original room for frontend display
+                message['room'] = original_room
+                
+                # Send to specific user only
+                self.socketio.emit('chat_message', message, room=user_id, namespace='/ws')
+                return message
+        
+        # Regular shared room - send to all users in the room
         self.socketio.emit('chat_message', message, room=room_id, namespace='/ws')
         
         return message

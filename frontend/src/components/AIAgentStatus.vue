@@ -40,13 +40,16 @@
                     🎓 Exit Reflection
                 </button>
             </div>
-        </div>            <div class="ai-description">
-                <p class="ai-desc-text">
-                    {{ reflectionActive 
-                        ? 'Bob is guiding your learning reflection. You can exit anytime!' 
-                        : 'Hi, I\'m Bob, your proactive AI teammate. I\'m listening and can jump in to help!' }}
-                </p>
-            </div>
+        </div>
+        
+        <!-- Only show description before session starts -->
+        <div v-if="!sessionStarted" class="ai-description">
+            <p class="ai-desc-text">
+                {{ reflectionActive 
+                    ? 'Bob is guiding your learning reflection. You can exit anytime!' 
+                    : 'Hi, I\'m Bob, your proactive AI teammate. I\'m listening and can jump in to help!' }}
+            </p>
+        </div>
     </div>
     
     <!-- Intervention Settings Modal -->
@@ -73,6 +76,14 @@ export default defineComponent({
             default: true
         },
         reflectionActive: {
+            type: Boolean,
+            default: false
+        },
+        showDescription: {
+            type: Boolean,
+            default: false
+        },
+        sessionStarted: {
             type: Boolean,
             default: false
         }
