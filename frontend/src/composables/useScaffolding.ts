@@ -37,7 +37,6 @@ export function useScaffolding(code: any, selectedLanguage: any, socket: any, ro
       // Check for scaffolding trigger - only ## comments (double comment syntax)
       const scaffoldingPrefixes = {
         'python': '##',           // Python: ##
-        'javascript': '// //',    // JavaScript: // //  
         'java': '// //',          // Java: // //
         'cpp': '// //',           // C++: // //
         'typescript': '// //'     // TypeScript: // //

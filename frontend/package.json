@@ -13,7 +13,6 @@
     "@codemirror/collab": "^6.1.1",
     "@codemirror/lang-cpp": "github:codemirror/lang-cpp",
     "@codemirror/lang-java": "github:codemirror/lang-java",
-    "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-python": "github:codemirror/lang-python",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@guolao/vue-monaco-editor": "^1.5.5",

@@ -122,7 +122,7 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
       /^\s*(if|elif|else|for|while|try|except|finally|with)\s*.*:/,
       // Method definitions in classes
       /^\s*(public|private|protected|static)\s+\w+.*\{/,
-      // JavaScript/Java function patterns
+      // Java function patterns
       /^\s*\w+\s*=\s*function.*\{/,
       /^\s*function\s+\w+.*\{/,
       // Lambda or arrow functions that start blocks

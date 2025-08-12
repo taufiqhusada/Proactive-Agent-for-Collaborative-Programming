@@ -157,7 +157,6 @@ export default {
     languageDisplayName() {
       const languages = {
         'python': '🐍 Python',
-        'javascript': '🚀 JavaScript',
         'java': '☕ Java',
         'cpp': '⚡ C++',
         'c': '🔧 C'

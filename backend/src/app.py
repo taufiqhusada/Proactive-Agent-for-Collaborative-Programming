@@ -692,28 +692,38 @@ def execute_code(code, language):
                 cwd=tempfile.gettempdir()
             )
             
-        elif language == 'javascript':
-            # Execute JavaScript code using Node.js
-            proc = subprocess.run(
-                ["node", "-e", code],
-                capture_output=True, 
-                text=True, 
-                timeout=10
-            )
-            
         elif language == 'java':
             # Execute Java code
-            with tempfile.NamedTemporaryFile(suffix=".java", delete=False) as source_file:
-                source_file.write(code.encode())
-                source_file.flush()
+            import re
+            
+            # Extract class name from code
+            class_match = re.search(r'public\s+class\s+(\w+)', code)
+            if not class_match:
+                # If no public class found, look for any class
+                class_match = re.search(r'class\s+(\w+)', code)
+            
+            if not class_match:
+                return {
+                    'output': '',
+                    'error': 'No class definition found in Java code',
+                    'exitCode': 1,
+                    'executionTime': 0
+                }
+            
+            class_name = class_match.group(1)
+            
+            # Create temp file with proper class name
+            temp_dir = tempfile.mkdtemp()
+            java_file = os.path.join(temp_dir, f"{class_name}.java")
+            
+            try:
+                with open(java_file, 'w') as f:
+                    f.write(code)
                 
-                class_name = os.path.basename(source_file.name)[:-5]  # Remove .java extension
-                jar_file = source_file.name + ".jar"
-                
-                # Compile and package as JAR
+                # Compile Java code
                 compile_proc = subprocess.run(
-                    ["javac", source_file.name, "-d", tempfile.gettempdir()],
-                    capture_output=True, text=True
+                    ["javac", java_file],
+                    capture_output=True, text=True, cwd=temp_dir
                 )
                 
                 if compile_proc.returncode != 0:
@@ -726,17 +736,53 @@ def execute_code(code, language):
                 
                 # Execute the compiled Java class
                 proc = subprocess.run(
-                    ["java", "-cp", tempfile.gettempdir(), class_name],
-                    capture_output=True, text=True, timeout=10
+                    ["java", class_name],
+                    capture_output=True, text=True, timeout=10, cwd=temp_dir
                 )
                 
-                # Clean up class and JAR files
+            finally:
+                # Clean up temp directory
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                    
+        elif language == 'cpp':
+            # Execute C++ code
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".cpp", delete=False) as source_file:
+                    source_file.write(code.encode())
+                    source_file.flush()
+                    
+                    cpp_file = source_file.name
+                    exe_file = cpp_file[:-4]  # Remove .cpp extension for executable
+                    
+                    # Compile the C++ code
+                    compile_proc = subprocess.run(
+                        ["g++", cpp_file, "-o", exe_file],
+                        capture_output=True, text=True
+                    )
+                    
+                    if compile_proc.returncode != 0:
+                        return {
+                            'output': '',
+                            'error': compile_proc.stderr,
+                            'exitCode': compile_proc.returncode,
+                            'executionTime': 0
+                        }
+                    
+                    # Execute the compiled program
+                    proc = subprocess.run(
+                        [exe_file],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    
+            finally:
+                # Clean up
                 try:
-                    os.remove(os.path.join(tempfile.gettempdir(), class_name + ".class"))
-                    os.remove(jar_file)
+                    os.unlink(cpp_file)
+                    os.unlink(exe_file)
                 except:
                     pass
-            
+                    
         elif language == 'c':
             # Execute C code
             try:

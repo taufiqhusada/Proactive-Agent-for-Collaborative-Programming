@@ -24,14 +24,6 @@ export const codeAnalysisConfig = {
         /subprocess\.(call|run|Popen)/,
         /pickle\.loads?\s*\(/,
         /yaml\.load\s*\(/
-      ],
-      javascript: [
-        /eval\s*\(/,
-        /innerHTML\s*=/,
-        /document\.write\s*\(/,
-        /setTimeout\s*\(\s*["'`]/,
-        /setInterval\s*\(\s*["'`]/,
-        /new\s+Function\s*\(/
       ]
     }
   },

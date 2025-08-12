@@ -16,7 +16,6 @@
                         <option value="python">🐍 Python</option>
                         <option value="java">☕ Java</option>
                         <option value="cpp">⚡ C++</option>
-                        <option value="javascript">🚀 JavaScript</option>
                     </select>
                 </div>
                 <div class="ai-mode-control">
@@ -120,7 +119,6 @@
 <script>
 import { defineComponent, ref, shallowRef, onMounted, watch, computed } from 'vue'
 import { Codemirror } from 'vue-codemirror'
-import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
 import { java } from '@codemirror/lang-java'
 import { cpp } from '@codemirror/lang-cpp'
@@ -194,7 +192,6 @@ export default defineComponent({
             python: python(),
             java: java(),
             cpp: cpp(),
-            javascript: javascript(),
         }
 
         const codeMirrorExtensions = useCodeMirrorExtensions(
