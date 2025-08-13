@@ -124,8 +124,8 @@
 
         <div class="chat-input">
             <div class="input-wrapper">
-                <!-- @AI Mention Button (hidden in individual and no-AI modes) -->
-                <div v-if="!individualMode && !noAiMode" class="ai-mention-controls">
+                <!-- @AI Mention Button (hidden only in no-AI mode) -->
+                <div v-if="!noAiMode" class="ai-mention-controls">
                     <button 
                         @click="toggleAIMention"
                         :class="['ai-mention-btn', { active: hasAIMention }]"

@@ -404,7 +404,7 @@ Your response:"""
         if len(context.messages) > 10:  # max_context_messages
             context.messages = context.messages[-10:]
 
-    def update_code_context(self, room_id: str, code: str, language: str = "python"):
+    def update_code_context(self, room_id: str, code: str, language: str = "python", user_id: str = None):
         """Update the current code context for a room"""
         if room_id not in self.conversation_history:
             self.conversation_history[room_id] = ConversationContext(
@@ -416,9 +416,20 @@ Your response:"""
         context.code_context = code
         context.programming_language = language
         
-        # Cancel any pending intervention since user is actively coding
-        self.intervention_service.cancel_intervention(room_id, "code update received")
-        print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
+        # Cancel pending interventions - target specific user's personal room if user_id provided
+        if user_id:
+            # Cancel timer for the specific user's personal room (if they're in individual mode)
+            personal_room = f"{room_id}_personal_{user_id}"
+            self.intervention_service.cancel_intervention(personal_room, "code update received")
+            print(f"🖥️ Code updated by user {user_id} - cancelled timer for personal room: {personal_room}")
+            
+            # Also cancel for the main room (for shared mode compatibility)
+            self.intervention_service.cancel_intervention(room_id, "code update received")
+            print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
+        else:
+            # Fallback to original behavior if no user_id provided
+            self.intervention_service.cancel_intervention(room_id, "code update received")
+            print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
         
         # Check for planning intervention (only once per session)
         if not context.planning_check_done:
@@ -542,9 +553,9 @@ Your response:"""
         except Exception as e:
             print(f"Error processing message in AI agent: {e}")
 
-    def handle_code_update(self, room_id: str, code: str, language: str = "python"):
+    def handle_code_update(self, room_id: str, code: str, language: str = "python", user_id: str = None):
         """Handle code updates from the editor"""
-        self.update_code_context(room_id, code, language)
+        self.update_code_context(room_id, code, language, user_id)
         
     def handle_problem_update(self, room_id: str, problem_title: str, problem_description: str):
         """Handle problem description updates"""

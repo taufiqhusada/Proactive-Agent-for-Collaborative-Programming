@@ -105,7 +105,7 @@
 export default {
   name: 'CodeRunner',
   
-  emits: ['chat-message'],
+  emits: ['chat-message', 'send-to-personal-ai'],
   
   props: {
     code: {
@@ -284,7 +284,9 @@ export default {
           body: JSON.stringify({
             code: this.code,
             language: this.language,
-            room_id: this.roomId  // Include room_id for AI validation
+            room_id: this.roomId,  // Include room_id for AI validation
+            ai_mode: this.aiMode,  // Include AI mode to determine analysis type
+            user_id: this.currentUserId  // Include user ID for individual mode analysis
           })
         });
         

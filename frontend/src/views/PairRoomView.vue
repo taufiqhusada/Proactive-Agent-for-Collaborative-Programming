@@ -318,32 +318,43 @@ export default defineComponent({
 
         const handleCodeChange = (value, viewUpdate) => {
             console.log('handleCodeChange called with value length:', value.length)
+            console.log('ViewUpdate docChanged:', viewUpdate.docChanged)
             
             if (isLocalUpdate.value) {
                 console.log('🔄 Local update flag set, skipping analysis')
                 return
             }
             
-            isLocalUpdate.value = true
-            code.value = value
-            
-            // Save to localStorage for persistence across reloads
-            saveRoomState(value, selectedLanguage.value)
-            
-            // Emit code change to other users in the room
-            socket.emit('code_change', {
-                room: roomId,
-                code: value,
-                userId: currentUserId.value,
-                language: selectedLanguage.value
-            })
-            
-            // Monitor for code analysis
-            if (viewUpdate.view) {
-                console.log('👀 Calling onCursorActivity with view')
-                codeAnalysis.onCursorActivity(viewUpdate.view)
+            // Only emit code_change and trigger analysis for actual document content changes
+            // not just cursor position adjustments or remote cursor updates
+            if (viewUpdate.docChanged) {
+                console.log('📝 Document content changed - processing code update')
+                
+                isLocalUpdate.value = true
+                code.value = value
+                
+                // Save to localStorage for persistence across reloads
+                saveRoomState(value, selectedLanguage.value)
+                
+                // Emit code change to other users in the room
+                socket.emit('code_change', {
+                    room: roomId,
+                    code: value,
+                    userId: currentUserId.value,
+                    language: selectedLanguage.value
+                })
+                
+                // Monitor for code analysis
+                if (viewUpdate.view) {
+                    console.log('👀 Calling onCursorActivity with view')
+                    codeAnalysis.onCursorActivity(viewUpdate.view)
+                } else {
+                    console.log('❌ No view in viewUpdate, skipping cursor activity')
+                }
             } else {
-                console.log('❌ No view in viewUpdate, skipping cursor activity')
+                console.log('👁️ Only cursor/selection changed - skipping backend update and analysis')
+                // Still update local code value for consistency
+                code.value = value
             }
             
             isLocalUpdate.value = false
@@ -361,8 +372,19 @@ export default defineComponent({
         const handleCodeRunnerPersonalAI = (messageData) => {
             console.log('🤖 Sending CodeRunner message directly to personal AI:', messageData.content)
             
-            // Dispatch custom event that IndividualAIChat can listen to
-            window.dispatchEvent(new CustomEvent('send-to-personal-ai', { detail: messageData }))
+            // Directly access the PairChat component through ChatContainer
+            if (chatContainer.value && chatContainer.value.pairChat) {
+                // Add @AI mention to the message content for proper AI triggering
+                const messageWithAIMention = `@AI ${messageData.content}`
+                
+                // Set the message in the input field and send it
+                chatContainer.value.pairChat.newMessage = messageWithAIMention
+                chatContainer.value.pairChat.sendMessage()
+                
+                console.log('✅ Successfully sent CodeRunner message to personal AI with @AI mention')
+            } else {
+                console.error('❌ ChatContainer or PairChat reference not available')
+            }
         }
 
         // Handle AI mode change from header toggle

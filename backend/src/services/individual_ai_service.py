@@ -230,8 +230,40 @@ class IndividualAIService:
             return []
 
     def handle_user_disconnect(self, user_id: str):
-        """Clean up when user disconnects"""
-        print(f"👋 User {user_id} disconnected from individual AI service")
+        """Handle user disconnect by cleaning up personal rooms"""
+        print(f"👋 Cleaning up personal rooms for disconnected user {user_id}")
+        # Clean up any personal rooms for this user
+        to_remove = [room_id for room_id in self.personal_room_mapping.keys() 
+                     if room_id.endswith(f"_personal_{user_id}")]
+        for room_id in to_remove:
+            del self.personal_room_mapping[room_id]
+
+    def start_panel_analysis_for_user(self, original_room_id: str, user_id: str, code: str, result: dict):
+        """Start code execution panel analysis for individual AI mode"""
+        try:
+            print(f"� Starting individual panel analysis for user {user_id} in room {original_room_id}")
+            
+            ai_agent = get_ai_agent()
+            if not ai_agent or not ai_agent.code_analysis_service:
+                print("🚫 Core AI agent or code analysis service not available")
+                return
+                
+            # Generate personal room ID for analysis
+            personal_room_id = self.get_personal_room_id(original_room_id, user_id)
+            print(f"🔍 Using personal room for analysis: {personal_room_id}")
+            
+            # Use the core AI agent's code analysis service but with personal room ID
+            ai_agent.code_analysis_service.start_panel_analysis(
+                personal_room_id, 
+                code, 
+                result, 
+                ai_agent.conversation_history
+            )
+            
+            print(f"🔍 Started individual panel analysis for personal room: {personal_room_id}")
+            
+        except Exception as e:
+            print(f"❌ Error in individual panel analysis for user {user_id}: {e}")
 
 
 # Global service instance

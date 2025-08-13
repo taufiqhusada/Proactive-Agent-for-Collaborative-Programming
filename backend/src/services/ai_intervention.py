@@ -166,10 +166,10 @@ class AIInterventionService:
                 print(f"🚫 AI WILL NOT RESPOND: Cooldown period ({time_since_last.total_seconds():.1f}s < {self.response_cooldown}s)")
                 return False
                 
-        # Need minimum number of messages
-        if len(context.messages) < self.min_messages_before_response:
-            print(f"🚫 AI WILL NOT RESPOND: Not enough messages ({len(context.messages)} < {self.min_messages_before_response})")
-            return False
+        # # Need minimum number of messages
+        # if len(context.messages) < self.min_messages_before_response:
+        #     print(f"🚫 AI WILL NOT RESPOND: Not enough messages ({len(context.messages)} < {self.min_messages_before_response})")
+        #     return False
         
         # Simple AI decision using centralized LLM
         should_intervene, intervention_message = self.ai_decision_callback(room_id)

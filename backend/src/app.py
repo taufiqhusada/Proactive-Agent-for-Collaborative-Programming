@@ -226,8 +226,8 @@ def ws_update(data):
     # Store the updated code in room state
     manager.set_room_state(room, delta)
     
-    # Update AI agent with new code context
-    ai_agent.handle_code_update(room, delta, "python")
+    # Update AI agent with new code context and user ID for targeted timer cancellation
+    ai_agent.handle_code_update(room, delta, "python", user_id=request.sid)
     
     # Broadcast to all other clients in the room
     emit("update", {"delta": delta, "sourceId": source_id}, room=room, include_self=False)
@@ -267,7 +267,13 @@ def ws_chat_message(data):
     if is_individual_mode:
         print(f"🤖 Individual mode message detected from user {user_id}")
         # For individual mode, create a personal room for AI processing
-        personal_room = f"{room}_personal_{user_id}"
+        # Avoid double suffixes if room is already personal
+        if "_personal_" in room:
+            personal_room = room  # Already a personal room, don't add another suffix
+            print(f"🤖 Using existing personal room: {personal_room}")
+        else:
+            personal_room = f"{room}_personal_{user_id}"
+            print(f"🤖 Created new personal room: {personal_room}")
         
         # Update the message to use the personal room for AI processing
         personal_message = data.copy()
@@ -276,23 +282,17 @@ def ws_chat_message(data):
         # Don't broadcast individual mode messages to other users - keep them private
         print(f"🤖 Processing individual message in personal room: {personal_room}")
         
-        # Get current AI mode for the original room
-        current_ai_mode = manager.get_ai_mode(room)
+        # For individual mode, always process with AI (user explicitly chose individual AI mode)
+        # Copy context from original room to personal room if needed
+        individual_ai_service.copy_room_context_to_personal(room, user_id)
         
-        # Only process with AI if in individual mode
-        if current_ai_mode == 'individual':
-            # Copy context from original room to personal room if needed
-            individual_ai_service.copy_room_context_to_personal(room, user_id)
-            
-            # Process message with AI agent in personal room in a separate thread
-            def process_individual_ai_message():
-                print(f"🤖 Processing individual AI message for personal room {personal_room}")
-                ai_agent.process_message_sync(personal_message)
-                print(f"🤖 Individual AI message processing completed for personal room {personal_room}")
-            
-            threading.Thread(target=process_individual_ai_message, daemon=True).start()
-        else:
-            print(f"🚫 Skipping AI processing - AI mode is '{current_ai_mode}', expected 'individual'")
+        # Process message with AI agent in personal room in a separate thread
+        def process_individual_ai_message():
+            print(f"🤖 Processing individual AI message for personal room {personal_room}")
+            ai_agent.process_message_sync(personal_message)
+            print(f"🤖 Individual AI message processing completed for personal room {personal_room}")
+        
+        threading.Thread(target=process_individual_ai_message, daemon=True).start()
     else:
         # Regular shared mode - broadcast to everyone and process normally
         # Broadcast chat message - include self for system messages, exclude for regular messages
@@ -708,10 +708,30 @@ def execute_code_endpoint():
                 print(f"⚠️  Database save error (non-blocking): {db_error}")
         
         # Trigger panel analysis for execution feedback (non-blocking)
-        if room_id and ai_agent and code.strip():
+        if room_id and code.strip():
             try:
-                ai_agent.start_panel_analysis(room_id, code, result)
-                print(f"🔍 Started panel analysis for room {room_id}")
+                # Get AI mode and user ID from request data
+                ai_mode = data.get('ai_mode', 'shared')
+                user_id = data.get('user_id')
+                
+                print(f"🔍 Code execution analysis - AI mode: {ai_mode}, user_id: {user_id}")
+                
+                if ai_mode == 'individual' and user_id:
+                    # Use individual AI service for personal mode
+                    individual_ai = get_individual_ai_service()
+                    if individual_ai:
+                        individual_ai.start_panel_analysis_for_user(room_id, user_id, code, result)
+                        print(f"🔍 Started individual panel analysis for user {user_id} in room {room_id}")
+                    else:
+                        print("⚠️ Individual AI service not available")
+                else:
+                    # Use shared AI agent for shared mode
+                    if ai_agent:
+                        ai_agent.start_panel_analysis(room_id, code, result)
+                        print(f"🔍 Started shared panel analysis for room {room_id}")
+                    else:
+                        print("⚠️ Shared AI agent not available")
+                        
             except Exception as analysis_error:
                 print(f"⚠️  Panel analysis error (non-blocking): {analysis_error}")
         

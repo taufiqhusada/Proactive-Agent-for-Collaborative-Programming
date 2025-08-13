@@ -348,10 +348,23 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
             
             if analysis:
                 print(f"📊 Panel analysis: {analysis['message']}")
+                print(f"📊 Room ID: {room_id}")
+                
+                # Emit to the room (could be personal room like room123_personal_userId)
                 self.socketio.emit('execution_analysis', {
                     'analysis': analysis,
                     'room_id': room_id
                 }, room=room_id, namespace='/ws')
+                
+                # If this is a personal room, also emit to the base room
+                # so the user receives the analysis regardless of which room they're connected to
+                if '_personal_' in room_id:
+                    base_room = room_id.split('_personal_')[0]
+                    print(f"📊 Also emitting to base room: {base_room}")
+                    self.socketio.emit('execution_analysis', {
+                        'analysis': analysis,
+                        'room_id': room_id  # Keep original room_id for context
+                    }, room=base_room, namespace='/ws')
                 
         except Exception as e:
             logging.error(f"Error in panel analysis background task: {e}")
