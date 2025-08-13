@@ -4,16 +4,18 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV PORT 8080
-ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk-amd64
-ENV PATH $JAVA_HOME/bin:$PATH
 
-# Install system dependencies
+# Install system dependencies and set Java environment
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
-        openjdk-17-jdk \
+        default-jdk \
         && rm -rf /var/lib/apt/lists/*
+
+# Set Java environment variables
+ENV JAVA_HOME /usr/lib/jvm/default-java
+ENV PATH $JAVA_HOME/bin:$PATH
 
 # Create and set the working directory
 WORKDIR /app
