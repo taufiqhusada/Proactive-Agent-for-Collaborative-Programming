@@ -1393,6 +1393,17 @@ export default defineComponent({
                     console.log('🔄 Reinitialized speech recognition')
                 }
                 
+                // Always start auto recording after reset
+                console.log('🎤 Starting auto recording after reset')
+                autoRecordingEnabled.value = true
+                // Small additional delay to ensure speech recognition is fully initialized
+                setTimeout(() => {
+                    if (speechSupported.value) {
+                        startAutoRecording()
+                        console.log('✅ Auto recording started successfully after reset')
+                    }
+                }, 200)
+                
                 // Show success feedback
                 showRecordingResetSuccess.value = true
                 setTimeout(() => {
@@ -2036,6 +2047,13 @@ export default defineComponent({
             console.log('🔄 Confirming session reset...')
             showResetWarning.value = false
             isResetting.value = true
+            
+            // 0. Stop auto recording first to prevent any voice interference during reset
+            if (autoRecordingEnabled.value) {
+                console.log('🔇 Stopping auto recording before session reset')
+                stopAutoRecording()
+                autoRecordingEnabled.value = false
+            }
             
             try {
                 // 1. Reset AI agent state via API
