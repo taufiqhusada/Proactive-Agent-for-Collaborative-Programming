@@ -101,6 +101,8 @@
             :code-block="currentCodeBlock"
             :editor-position="{ top: 100, left: 0 }"
             :room-id="roomId"
+            :socket="socket"
+            :current-user-id="currentUserId"
             @highlight-line="onHighlightLine"
             @apply-fix="onApplyFix"
             @explain-issue="onExplainIssue"

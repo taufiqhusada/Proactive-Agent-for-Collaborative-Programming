@@ -937,12 +937,16 @@ def analyze_code_block():
         context = data.get('context', {})
         problem_context = data.get('problemContext', None)
         room_id = data.get('roomId', None)  # Get room ID for socket broadcasting
+        ai_mode = data.get('aiMode', 'shared')  # Get AI mode 
+        user_id = data.get('userId', None)  # Get user ID for individual mode
 
         print(f"📊 Code Analysis Request:")
         print(f"  Code: {code[:100]}...")
         print(f"  Language: {language}")
         print(f"  Context: {context}")
         print(f"  Room ID: {room_id}")
+        print(f"  AI Mode: {ai_mode}")
+        print(f"  User ID: {user_id}")
         # print(f"  Problem Context: {problem_context}")
         
         if not code.strip():
@@ -960,10 +964,8 @@ def analyze_code_block():
 
         print("this is the result", result)
         
-        # Always broadcast results to all users in the room (whether issues found or not)
+        # Broadcast results based on AI mode - following the same pattern as individual AI
         if room_id:
-            print(f"📡 Broadcasting code analysis results to room {room_id}")
-            
             # Determine the highest severity level
             issues = result.get('issues', [])
             highest_severity = 'medium'
@@ -980,18 +982,41 @@ def analyze_code_block():
                 'cursorLine': context.get('cursorLine')
             }
             
-            # Broadcast to all users in the room via socket
-            socketio.emit('code_analysis_result', {
-                'codeBlock': code_block,
-                'issues': issues,
-                'highestSeverity': highest_severity,
-                'timestamp': result.get('timestamp'),
-                'confidence': result.get('confidence')
-            }, room=room_id, namespace='/ws')
-            
-            print(f"✅ Code analysis results broadcasted to room {room_id} (issues: {len(issues)})")
+            # Handle broadcasting based on AI mode - same pattern as individual AI service
+            if ai_mode == 'individual' and user_id:
+                # For individual mode, create personal room ID (backend constructs it)
+                personal_room_id = f"{room_id}_personal_{user_id}"
+                print(f"📡 Broadcasting code analysis results to personal room: {personal_room_id}")
+                
+                # Broadcast to personal room
+                socketio.emit('code_analysis_result', {
+                    'codeBlock': code_block,
+                    'issues': issues,
+                    'highestSeverity': highest_severity,
+                    'timestamp': result.get('timestamp'),
+                    'confidence': result.get('confidence')
+                }, room=personal_room_id, namespace='/ws')
+                
+                print(f"✅ Code analysis results broadcasted to personal room {personal_room_id} (issues: {len(issues)})")
+            else:
+                # For shared mode, broadcast to original room
+                print(f"📡 Broadcasting code analysis results to shared room: {room_id}")
+                
+                socketio.emit('code_analysis_result', {
+                    'codeBlock': code_block,
+                    'issues': issues,
+                    'highestSeverity': highest_severity,
+                    'timestamp': result.get('timestamp'),
+                    'confidence': result.get('confidence')
+                }, room=room_id, namespace='/ws')
+                
+                print(f"✅ Code analysis results broadcasted to shared room {room_id} (issues: {len(issues)})")
         
         return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error analyzing code block: {e}")
+        return jsonify({'error': str(e)}), 500
         
     except Exception as e:
         print(f"Error analyzing code block: {e}")

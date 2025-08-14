@@ -206,6 +206,14 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
           }
         }
       })
+      
+      // Also join personal room for individual AI features (code analysis, etc.)
+      const personalRoomId = `${roomId}_personal_${socket.id}`
+      console.log('🏠 Joining personal room for individual AI features:', personalRoomId)
+      socket.emit('join', { 
+        room: personalRoomId, 
+        username: auth?.user || 'Guest'
+      })
     })
 
     socket.on('update', ({ delta, sourceId }: any) => {
@@ -277,6 +285,14 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
           }
         }
       })
+      
+      // Also rejoin personal room for individual AI features
+      const personalRoomId = `${roomId}_personal_${socket.id}`
+      console.log('🏠 Rejoining personal room for individual AI features:', personalRoomId)
+      socket.emit('join', { 
+        room: personalRoomId, 
+        username: auth?.user || 'Guest'
+      })
     })
   }
 
@@ -291,6 +307,11 @@ export function useSocketHandlers(socket: any, roomId: any, auth: any, code: any
     socket.off('connect_error')
     socket.off('reconnect')
     socket.emit('leave', { room: roomId })
+    
+    // Also leave personal room
+    const personalRoomId = `${roomId}_personal_${socket.id}`
+    socket.emit('leave', { room: personalRoomId })
+    console.log('🏠 Left personal room:', personalRoomId)
   }
 
   return {

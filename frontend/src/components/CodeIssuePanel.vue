@@ -63,6 +63,8 @@
 </template>
 
 <script>
+import { aiModeService } from '../services/aiModeService'
+
 export default {
   name: 'CodeIssuePanel',
   
@@ -213,29 +215,43 @@ export default {
       
       console.log('🚀 Triggering analysis via API call...')
       
+      // Check AI mode to determine how to send the analysis request
+      const isIndividualMode = aiModeService.isIndividualMode()
+      const requestData = {
+        code: codeBlock.code,
+        language: codeBlock.language || 'python',
+        context: {
+          startLine: codeBlock.startLine,
+          endLine: codeBlock.endLine,
+          cursorLine: codeBlock.cursorLine
+        },
+        problemContext: codeBlock.problemContext || null,
+        roomId: this.roomId  // Include room ID for socket broadcasting
+      }
+      
+      // Add AI mode and user ID for personal AI mode handling - same pattern as CodeRunner
+      if (isIndividualMode) {
+        requestData.aiMode = 'individual'
+        requestData.userId = this.currentUserId
+        console.log('🤖 Individual AI Mode: Adding userId and aiMode to analysis request')
+      } else {
+        requestData.aiMode = 'shared'
+        console.log('👥 Shared AI Mode: Using shared analysis')
+      }
+      
       try {
         // Fire and forget - just trigger the analysis, don't wait for response
         fetch('/api/analyze-code-block', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: codeBlock.code,
-            language: codeBlock.language || 'python',
-            context: {
-              startLine: codeBlock.startLine,
-              endLine: codeBlock.endLine,
-              cursorLine: codeBlock.cursorLine
-            },
-            problemContext: codeBlock.problemContext || null,
-            roomId: this.roomId  // Include room ID for socket broadcasting
-          })
+          body: JSON.stringify(requestData)
         }).then(response => {
           console.log('📡 Analysis triggered, status:', response.status)
           if (!response.ok) {
             console.error('❌ Analysis API call failed:', response.status, response.statusText)
           }
         }).catch(error => {
-          console.error('� Error triggering analysis:', error);
+          console.error('🚨 Error triggering analysis:', error);
         }).finally(() => {
           this.analysisInProgress = false;
         });
