@@ -8,7 +8,7 @@
                 <div class="ai-name">Bob</div>
                 <div class="ai-status">
                     <span class="status-dot" :class="{ 'reflection-mode': reflectionActive }"></span>
-                    {{ reflectionActive ? 'Reflection Mode Active' : 'AI Teammate Active' }}
+                    {{ reflectionActive ? 'Reflection Mode Active' : 'AI Active' }}
                 </div>
             </div>
             <!-- Action Buttons Container -->
