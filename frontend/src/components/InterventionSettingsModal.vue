@@ -144,7 +144,7 @@ export default defineComponent({
                 idle_intervention_enabled: true,
                 idle_intervention_delay: 5,
                 progress_check_enabled: true,
-                progress_check_interval: 30
+                progress_check_interval: 45
             })
         }
     },
@@ -156,7 +156,7 @@ export default defineComponent({
             idle_intervention_enabled: true,
             idle_intervention_delay: 5,
             progress_check_enabled: true,
-            progress_check_interval: 30
+            progress_check_interval: 45
         })
         
         // Separate local settings for code analysis (frontend-only)

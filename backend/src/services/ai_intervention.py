@@ -36,7 +36,7 @@ class AIInterventionService:
             'idle_intervention_enabled': True,  # idle intervention
             'idle_intervention_delay': 5,       # seconds to wait before idle intervention
             'progress_check_enabled': True,     # progress check
-            'progress_check_interval': 30       # seconds between progress checks
+            'progress_check_interval': 45       # seconds between progress checks
         }
         
         # Timing parameters
@@ -217,7 +217,7 @@ class AIInterventionService:
             print(f"📊 Progress timer already running for room {room_id}, keeping existing")
             return
             
-        interval = self.intervention_settings.get('progress_check_interval', 30)
+        interval = self.intervention_settings.get('progress_check_interval', 45)
         print(f"📊 Starting {interval}-second progress check timer for room {room_id}")
         
         def progress_check_callback():
