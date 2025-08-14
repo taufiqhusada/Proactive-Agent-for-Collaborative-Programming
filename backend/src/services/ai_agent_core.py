@@ -99,16 +99,15 @@ class AIAgent:
         last_message = context.messages[-1] if context.messages else None
         is_direct_mention = last_message and self._is_direct_ai_mention(last_message.content)
         
-        # Build execution context if available
-        execution_context = ""
-        if context.last_execution_time and context.last_execution_time > datetime.now() - timedelta(seconds=30):
-            execution_context = f"""
-                Recent Code Execution ({context.last_execution_time.strftime('%H:%M:%S')}):
-                Code: {context.last_execution_code[:200]}...
-                Output: {context.last_execution_output[:100] if context.last_execution_output else 'No output'}
-                Error: {context.last_execution_error[:100] if context.last_execution_error else 'No error'}
-                Success: {context.last_execution_success}
-                """
+        # Check if user is asking for syntax/code
+        is_syntax_request = last_message and self._is_syntax_request(last_message.content)
+        
+        # Build AI message history context to avoid repetition
+        ai_history_context = self._build_ai_history_context(context)
+        
+        # Add special syntax request guidance
+        if is_syntax_request:
+            ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES!"
         
         # Adjust prompt based on whether this is a direct mention
         if is_direct_mention:
@@ -119,26 +118,27 @@ class AIAgent:
                             - Problem description: {context.problem_description or "No specific problem"}
                             - Language: {context.programming_language}
 
-                            Recent Conversation:
+                            Recent Conversation (FOCUS ON LAST MESSAGE):
                             {recent_conversation}
 
                             Code Context:
                             {context.code_context if context.code_context else "No code visible"}
-                            
-                            {execution_context}
 
-                            NATURAL TEACHING APPROACH - Be helpful while encouraging learning:
-                            - Mix different response types: hints, encouragement, specific guidance, questions
-                            - Be conversational and supportive, not just question-asking
-                            - Adapt to their level: sometimes give direct help when appropriate
-                            - Balance learning with actually being helpful
-                            - If they have execution results, focus on those specific issues
+                            {ai_history_context}
+
+                            PROGRESSIVE LEARNING APPROACH - Help users learn step by step:
+                            - CRITICAL: Look at your recent messages above - you CANNOT repeat the same type of response
+                            - If you've already asked questions, DON'T ask more questions - give concrete answers
+                            - If you've given general hints, provide SPECIFIC details or examples
+                            - When they say "I don't know" repeatedly - they need concrete help, NOT more questions
+                            - FOLLOW THE GUIDANCE LEVEL: Each message must be more concrete than the previous
+                            - Balance learning with being actually helpful - don't leave them completely stuck
 
                             Response format:
-                            - If you should help: "YES|[natural, helpful response that may include hints, tips, or direct guidance - 15-40 words]"
+                            - If you should help: "YES|[MUST be different from your previous messages - be more concrete - 15-50 words]"
                             - If inappropriate request: "NO"
 
-                            IMPORTANT: Be naturally helpful while encouraging learning. Don't always ask questions!
+                            REMEMBER: DO NOT repeat your previous approach - if you asked questions before, give concrete answers now!
 
                             Your response:"""
         else:
@@ -154,21 +154,22 @@ class AIAgent:
 
                         Code Context:
                         {context.code_context if context.code_context else "No code visible"}
-                        
-                        {execution_context}
 
-                        NATURAL INTERVENTION - Help appropriately without being pushy:
-                        - If they're stuck or confused: Offer helpful hints or specific tips
+                        {ai_history_context}
+
+                        PROGRESSIVE INTERVENTION - Guide learning appropriately:
+                        - CRITICAL: Look at your recent messages above - you CANNOT give the same type of response again
+                        - If you've asked questions before, DON'T ask more questions - provide specific answers
+                        - If you gave general hints before, give CONCRETE examples or show actual code
+                        - When they say "I don't know" repeatedly: They need specific help, NOT more questions
                         - If they're discussing actively: Let them work it out
-                        - If they need encouragement: Give positive reinforcement
-                        - If there's a clear issue: Point it out gently
-                        - If they have execution results, focus on those specific issues
-
+                        - If they need encouragement: Give positive reinforcement  
+                        - FOLLOW THE GUIDANCE LEVEL: Each response must be MORE CONCRETE than your previous ones
                         Response format:
-                        - If you should help: "YES|[natural, varied response - hints, tips, or encouragement in 10-30 words]"
+                        - If you should help: "YES|[MUST be different from previous messages - escalate to more concrete - 10-40 words]"  
                         - If they're doing fine: "NO"
 
-                        IMPORTANT: Mix response types. Don't always ask questions - sometimes just give helpful tips!
+                        CRITICAL: DO NOT repeat your previous approach - if you gave questions before, give concrete examples now!
 
                         Your response:"""
             
@@ -179,7 +180,7 @@ class AIAgent:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are Bob, a helpful pair programming assistant. Only intervene when truly helpful."},
+                    {"role": "system", "content": "You are Bob, a learning-focused pair programming assistant. Provide progressive hints and guidance to help users learn, not complete solutions. Start with conceptual hints, then provide syntax hints only when specifically requested, and avoid giving full solutions unless users are completely stuck."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=150 if is_direct_mention else 100,
@@ -193,6 +194,7 @@ class AIAgent:
                 parts = llm_response.split("|", 1)
                 if len(parts) >= 2:
                     intervention_message = parts[1]
+                    
                     mention_type = "DIRECT MENTION" if is_direct_mention else "IDLE INTERVENTION"
                     print(f"✅ AI WILL INTERVENE ({mention_type}): {intervention_message[:50]}...")
                     return True, intervention_message
@@ -220,6 +222,9 @@ class AIAgent:
             current_code = context.code_context if context.code_context else "No code written yet"
             problem_info = f"Title: {context.problem_title or 'Not specified'}\nDescription: {context.problem_description or 'Not specified'}"
             
+            # Build AI message history context to avoid repetition
+            ai_history_context = self._build_ai_history_context(context)
+            
             # Create progress check prompt
             prompt = f"""You are Bob, an AI pair programming assistant. You're doing a 30-second progress check to see if users are on track.
 
@@ -232,6 +237,8 @@ Current Code:
 
 Recent Conversation (last 10 messages):
 {recent_conversation}
+
+{ai_history_context}
 
 PROGRESS CHECK TASK:
 Analyze if the users are making good progress toward solving the problem. Look for:
@@ -251,6 +258,11 @@ GREEN FLAGS (don't intervene):
 - Actively debugging and learning
 - Both people contributing to conversation
 - On right track even if minor issues
+
+CRITICAL: Check your recent AI messages above - do NOT repeat the same intervention!
+- If you've already given basic hints, provide more specific guidance
+- If you've given specific tips, try a different approach or escalate to solution steps
+- Vary your intervention type and content based on what you've said before
 
 INTERVENTION TYPES:
 - REDIRECT: "I notice you're discussing X, but for this problem you might want to consider Y instead. What do you think?"
@@ -284,6 +296,7 @@ Your response:"""
                 if len(parts) >= 3:
                     intervention_type = parts[1]
                     intervention_message = parts[2]
+                    
                     print(f"📊 PROGRESS INTERVENTION ({intervention_type}): {intervention_message[:50]}...")
                     return True, intervention_message
                 else:
@@ -319,6 +332,96 @@ Your response:"""
         
         # Check if any word is an AI keyword
         return any(word in ai_keywords for word in words)
+
+    def _is_syntax_request(self, message_content: str) -> bool:
+        """Check if message contains syntax request keywords"""
+        content_lower = message_content.lower()
+        
+        syntax_keywords = [
+            'syntax', 'code', 'show me', 'give me', 'how do i', 'how to',
+            'what is the', 'can you write', 'example', 'sample'
+        ]
+        
+        return any(keyword in content_lower for keyword in syntax_keywords)
+
+    def _build_ai_history_context(self, context: ConversationContext) -> str:
+        """Build context about recent AI messages to avoid repetition"""
+        print(f"🔍 Building AI history context. Messages in history: {len(context.ai_message_history)}")
+        for i, msg in enumerate(context.ai_message_history):
+            print(f"   {i+1}. {msg[:50]}...")
+            
+        if not context.ai_message_history:
+            return "REPETITION CHECK: No recent AI messages - this is your first intervention in a while."
+            return "REPETITION CHECK: No recent AI messages - this is your first intervention in a while."
+        
+        recent_ai_messages = context.ai_message_history[-5:]  # Last 5 AI messages
+        ai_context = "REPETITION CHECK - Your Recent AI Messages (AVOID REPEATING):\n"
+        for i, msg in enumerate(recent_ai_messages, 1):
+            ai_context += f"  {i}. \"{msg}\"\n"
+        
+        # Give progressive guidance based on message count
+        # message_count = len(context.ai_message_history)
+        # if message_count == 0:
+        #     ai_context += "GUIDANCE: First interaction - start with conceptual hints or questions."
+        # elif message_count == 1:
+        #     ai_context += "GUIDANCE: Second hint - MUST be more specific. Name the exact data structure (like 'use a set') or show small code snippet."
+        # elif message_count == 2:
+        #     ai_context += "GUIDANCE: Third hint - MUST provide concrete examples. Show actual code like 'seen = set()' or 'if num in seen:'."
+        # elif message_count >= 3:
+        #     ai_context += "GUIDANCE: Multiple hints given - MUST provide actual working code steps. User clearly needs concrete help."
+        
+        # # Important note about subtasks
+        # ai_context += "\n\nIMPORTANT: This guidance level is for the CURRENT SUBTASK. If the user has moved to a different subtask or problem area, start the progression fresh (treat as first interaction for that new subtask)."
+        
+        return ai_context
+
+    def _track_ai_message(self, context: ConversationContext, message: str):
+        """Track AI message for progressive hints"""
+        print(f"🤖 TRACKING AI MESSAGE: {message[:50]}...")
+        print(f"   Before tracking: {len(context.ai_message_history)} messages")
+        
+        # Add message to history (keep last 10 messages)
+        context.ai_message_history.append(message)
+        if len(context.ai_message_history) > 10:
+            context.ai_message_history = context.ai_message_history[-10:]
+        
+        print(f"   After tracking: {len(context.ai_message_history)} messages")
+
+    def _reset_ai_message_history(self, context: ConversationContext):
+        """Reset AI message history when users make progress"""
+        if context.ai_message_history:
+            print(f"🔄 RESETTING AI MESSAGE HISTORY: Had {len(context.ai_message_history)} messages")
+            for i, msg in enumerate(context.ai_message_history):
+                print(f"   Clearing {i+1}. {msg[:50]}...")
+            context.ai_message_history = []
+            print(f"🔄 Reset complete. New count: {len(context.ai_message_history)}")
+        else:
+            print(f"🔄 Reset called but history was already empty")
+
+    def _detect_user_progress(self, context: ConversationContext) -> bool:
+        """Detect if users have made progress (to reset message history)"""
+        # Check for positive indicators of progress:
+        
+        # 1. Successful code execution recently
+        if (context.last_execution_time and 
+            context.last_execution_time > datetime.now() - timedelta(minutes=2) and
+            context.last_execution_success):
+            return True
+        
+        # 2. New code added recently
+        recent_messages = context.messages[-3:] if len(context.messages) >= 3 else context.messages
+        for msg in recent_messages:
+            # Look for keywords indicating progress
+            progress_keywords = ['works', 'working', 'fixed', 'got it', 'solved', 'success', 'good', 'nice']
+            if any(keyword in msg.content.lower() for keyword in progress_keywords):
+                return True
+        
+        # 3. No AI intervention needed for a while (users working independently)
+        if (context.last_ai_response and 
+            datetime.now() - context.last_ai_response > timedelta(minutes=5)):
+            return True
+            
+        return False
 
     def _handle_direct_ai_mention(self, room_id: str):
         """Handle direct AI mention - respond immediately bypassing ALL restrictions"""
@@ -376,8 +479,17 @@ Your response:"""
         context = self.conversation_history[room_id]
         context.messages.append(message)
         
+        # Track AI messages for progressive hints
+        if message.userId == 'ai_agent_bob':  # This is an AI message
+            self._track_ai_message(context, message.content)
+        
         # Update last message time for 5-second idle timer
         context.last_message_time = datetime.now()
+        
+        # Check for user progress and reset AI message history if needed
+        if message.userId != 'ai_agent_bob':  # Only for user messages
+            if self._detect_user_progress(context):
+                self._reset_ai_message_history(context)
         
         # Cancel any pending intervention since user is active
         self.intervention_service.cancel_intervention(room_id, "new message received")
@@ -436,6 +548,23 @@ Your response:"""
             print(f"🔍 Checking for planning intervention in room {room_id}")
             self._check_planning_intervention(room_id)
 
+    def update_execution_results(self, room_id: str, code: str, output: str, error: str, success: bool):
+        """Update execution results and potentially reset intervention level on success"""
+        if room_id not in self.conversation_history:
+            return
+            
+        context = self.conversation_history[room_id]
+        context.last_execution_code = code
+        context.last_execution_output = output
+        context.last_execution_error = error
+        context.last_execution_success = success
+        context.last_execution_time = datetime.now()
+        
+        # If execution was successful, reset AI message history
+        if success and not error:
+            self._reset_ai_message_history(context)
+            print(f"🎉 Successful execution in room {room_id} - reset AI message history")
+
     def update_problem_context(self, room_id: str, problem_title: str, problem_description: str):
         """Update the current problem description for a room"""
         if room_id not in self.conversation_history:
@@ -483,6 +612,11 @@ Your response:"""
 
     def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False):
         """Send an AI message to the chat room"""
+        # Track AI message for progressive hints (only for non-reflection messages)
+        if not is_reflection and room_id in self.conversation_history:
+            context = self.conversation_history[room_id]
+            self._track_ai_message(context, content)
+        
         message = self.audio_service.send_ai_message(
             room_id, content, is_reflection, False, self.conversation_history
         )
@@ -570,7 +704,18 @@ Your response:"""
 
     def join_room(self, room_id: str):
         """AI agent joins a room (but doesn't send greeting until session starts)"""
-        # Only initialize if OpenAI client is available
+        # Reset AI message history for fresh room join (regardless of OpenAI client)
+        if room_id not in self.conversation_history:
+            # Initialize context if it doesn't exist
+            self.conversation_history[room_id] = ConversationContext(
+                messages=[],
+                room_id=room_id
+            )
+        context = self.conversation_history[room_id]
+        self._reset_ai_message_history(context)
+        print(f"🔄 Reset AI message history for fresh room join: {room_id}")
+        
+        # Only proceed with OpenAI functionality if client is available
         if not self.client:
             print(f"⚠️  Bob cannot join room {room_id}: OpenAI client not initialized")
             return
@@ -582,6 +727,17 @@ Your response:"""
         if not self.client:
             print(f"⚠️  Bob cannot send greeting for room {room_id}: OpenAI client not initialized")
             return
+            
+        # Reset AI message history for fresh session start
+        if room_id not in self.conversation_history:
+            # Initialize context if it doesn't exist
+            self.conversation_history[room_id] = ConversationContext(
+                messages=[],
+                room_id=room_id
+            )
+        context = self.conversation_history[room_id]
+        self._reset_ai_message_history(context)
+        print(f"🔄 Reset AI message history for new session in room {room_id}")
             
         # Send a greeting message when session starts
         greeting_messages = [
@@ -610,6 +766,13 @@ Your response:"""
 
     def start_panel_analysis(self, room_id: str, code: str, result: dict):
         """Start non-blocking AI analysis for execution panel"""
+        # Update execution results and reset intervention level if successful
+        output = result.get('output', '')
+        error = result.get('error', '')
+        success = result.get('success', True)
+        self.update_execution_results(room_id, code, output, error, success)
+        
+        # Start the panel analysis
         self.code_analysis_service.start_panel_analysis(room_id, code, result, self.conversation_history)
 
 
@@ -735,6 +898,8 @@ Your response:"""
                 "has_problem_context": bool(context.problem_description or context.problem_title) if context else False,
                 "last_ai_response": context.last_ai_response.isoformat() if context and context.last_ai_response else None,
                 "has_pending_timer": self.intervention_service.has_pending_timer(room_id),
+                # AI message tracking
+                "ai_message_history_count": len(context.ai_message_history) if context else 0,
             }
             
             return summary

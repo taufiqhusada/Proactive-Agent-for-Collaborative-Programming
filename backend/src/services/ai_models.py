@@ -2,7 +2,7 @@
 AI Agent Models - Data classes and models for the AI agent system
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
 
@@ -40,3 +40,6 @@ class ConversationContext:
     
     # Planning check tracking - only run once per session
     planning_check_done: bool = False
+    
+    # AI message tracking for progressive hints (last 10 AI messages)
+    ai_message_history: List[str] = field(default_factory=list)
