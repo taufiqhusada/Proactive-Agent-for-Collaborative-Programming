@@ -228,7 +228,7 @@ class AIAudioService:
             return None
 
     def send_ai_message_with_audio(self, room_id: str, content: str, is_reflection: bool = False, 
-                                       is_execution_help: bool = False, conversation_history=None):
+                                       is_execution_help: bool = False, conversation_history=None, is_progress_check: bool = False):
         """Send an AI message to the chat room with audio - sync version"""
         message_type = "ai_exec" if is_execution_help else "ai"
         
@@ -242,6 +242,7 @@ class AIAudioService:
             'isAI': True,
             'isReflection': is_reflection,
             'isExecutionHelp': is_execution_help,
+            'isProgressCheck': is_progress_check,
             'hasAudio': True,  # Will have audio
             'isStreaming': False  # Non-streaming in sync mode
         }
@@ -308,7 +309,7 @@ class AIAudioService:
         return message
 
     def send_ai_message_text_only(self, room_id: str, content: str, is_reflection: bool = False, 
-                                 is_execution_help: bool = False, conversation_history=None):
+                                 is_execution_help: bool = False, conversation_history=None, is_progress_check: bool = False):
         """Send an AI message to the chat room without audio"""
         message_type = "ai_exec" if is_execution_help else "ai"
         
@@ -322,6 +323,7 @@ class AIAudioService:
             'isAI': True,
             'isReflection': is_reflection,
             'isExecutionHelp': is_execution_help,
+            'isProgressCheck': is_progress_check,
             'hasAudio': False
         }
         
@@ -353,15 +355,15 @@ class AIAudioService:
         return message
 
     def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False, 
-                       is_execution_help: bool = False, conversation_history=None):
+                       is_execution_help: bool = False, conversation_history=None, is_progress_check: bool = False):
         """Send an AI message to the chat room (sync version)"""
         try:
             return self.send_ai_message_with_audio(
-                room_id, content, is_reflection, is_execution_help, conversation_history)
+                room_id, content, is_reflection, is_execution_help, conversation_history, is_progress_check)
         except Exception as e:
             # Fallback to simple text-only message
             print(f"Error sending AI message with audio, falling back to text: {e}")
-            return self.send_ai_message_text_only(room_id, content, is_reflection, is_execution_help, conversation_history)
+            return self.send_ai_message_text_only(room_id, content, is_reflection, is_execution_help, conversation_history, is_progress_check)
 
     def set_voice_config(self, voice: str = None, model: str = None, speed: float = None):
         """Update voice configuration for TTS"""

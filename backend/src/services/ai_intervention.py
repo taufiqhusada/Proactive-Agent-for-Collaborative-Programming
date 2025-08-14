@@ -12,7 +12,7 @@ from .ai_models import ConversationContext
 
 
 class AIInterventionService:
-    def __init__(self, ai_decision_callback, send_message_callback, get_conversation_history_callback):
+    def __init__(self, ai_decision_callback, send_message_callback, get_conversation_history_callback, send_progress_notification_callback=None):
         """
         Initialize intervention service
         
@@ -20,9 +20,11 @@ class AIInterventionService:
             ai_decision_callback: Function to make AI intervention decisions
             send_message_callback: Function to send AI messages
             get_conversation_history_callback: Function to get conversation history
+            send_progress_notification_callback: Function to send progress check notifications (optional, defaults to send_message_callback)
         """
         self.ai_decision_callback = ai_decision_callback
         self.send_message_callback = send_message_callback
+        self.send_progress_notification_callback = send_progress_notification_callback or send_message_callback
         self.get_conversation_history_callback = get_conversation_history_callback
         
         # Simple timer tracking
@@ -236,19 +238,13 @@ class AIInterventionService:
                     print(f"📊 Progress check skipped for room {room_id}: Not enough activity")
                     return
                 
-                # Check cooldown to avoid spam
-                if context.last_ai_response:
-                    time_since_last = datetime.now() - context.last_ai_response
-                    if time_since_last.total_seconds() < self.response_cooldown:
-                        print(f"📊 Progress check skipped for room {room_id}: Cooldown active")
-                        return
-                
                 # Use specialized AI decision for progress tracking
                 should_intervene, message = self.ai_decision_callback(room_id, is_progress_check=True)
                 
                 if should_intervene and message:
                     print(f"📊 Progress intervention needed for room {room_id}: {message[:50]}...")
-                    self.send_message_callback(room_id, message)
+                    # Use the progress notification callback instead of regular message callback
+                    self.send_progress_notification_callback(room_id, message)
                 else:
                     print(f"📊 Progress check: Users on track in room {room_id}")
                     

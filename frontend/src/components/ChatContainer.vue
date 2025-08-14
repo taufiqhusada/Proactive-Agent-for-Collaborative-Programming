@@ -5,6 +5,8 @@
       <AIAgentStatus 
         :reflectionActive="showReflectionSession"
         :sessionStarted="sessionStarted"
+        :socket="socket"
+        :roomId="actualRoomId"
         @start-reflection="startReflectionSession"
         @stop-reflection="stopReflectionSession"
       />

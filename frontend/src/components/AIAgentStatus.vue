@@ -39,6 +39,17 @@
                 >
                     🎓 Exit Reflection
                 </button>
+                
+                <!-- Manual Progress Check Button -->
+                <button 
+                    @click="triggerManualProgressCheck"
+                    class="progress-check-button"
+                    title="Check progress manually"
+                    :disabled="isCheckingProgress"
+                >
+                    <span v-if="!isCheckingProgress">📊 Check</span>
+                    <span v-else>⏳</span>
+                </button>
             </div>
         </div>
         
@@ -59,10 +70,28 @@
         @close="showInterventionSettings = false"
         @save="handleSaveInterventionSettings"
     />
+    
+    <!-- Progress Check Notification Popup - rendered at body level to avoid clipping -->
+    <Teleport to="body">
+        <transition name="progress-notification">
+            <div 
+                v-if="showProgressNotification" 
+                class="progress-notification-bubble"
+                @click="dismissProgressNotification"
+                ref="progressNotificationRef"
+            >
+                <div class="progress-content">
+                    <div class="progress-icon">📊</div>
+                    <div class="progress-text">{{ progressNotificationText }}</div>
+                    <div class="progress-dismiss">×</div>
+                </div>
+            </div>
+        </transition>
+    </Teleport>
 </template>
 
 <script>
-import { defineComponent, ref, onMounted } from 'vue'
+import { defineComponent, ref, onMounted, onUnmounted } from 'vue'
 import InterventionSettingsModal from './InterventionSettingsModal.vue'
 
 export default defineComponent({
@@ -86,17 +115,87 @@ export default defineComponent({
         sessionStarted: {
             type: Boolean,
             default: false
+        },
+        socket: {
+            type: Object,
+            default: null
+        },
+        roomId: {
+            type: String,
+            default: ''
         }
     },
     emits: ['start-reflection', 'stop-reflection'],
-    setup() {
+    setup(props) {
         const showInterventionSettings = ref(false)
+        const showProgressNotification = ref(false)
+        const progressNotificationText = ref('')
+        let progressNotificationTimer = null
+        
         const interventionSettings = ref({
             idle_intervention_enabled: true,
             idle_intervention_delay: 5,
             progress_check_enabled: true,
             progress_check_interval: 45
         })
+        
+        const showProgressCheckNotification = (message) => {
+            progressNotificationText.value = message
+            showProgressNotification.value = true
+            
+            // Clear any existing timer but don't set auto-dismiss
+            if (progressNotificationTimer) {
+                clearTimeout(progressNotificationTimer)
+                progressNotificationTimer = null
+            }
+        }
+        
+        const dismissProgressNotification = () => {
+            showProgressNotification.value = false
+            if (progressNotificationTimer) {
+                clearTimeout(progressNotificationTimer)
+                progressNotificationTimer = null
+            }
+        }
+        
+        // Manual progress check functionality
+        const isCheckingProgress = ref(false)
+        
+        const triggerManualProgressCheck = async () => {
+            if (!props.roomId || isCheckingProgress.value) {
+                return
+            }
+            
+            try {
+                isCheckingProgress.value = true
+                console.log('📊 Triggering manual progress check for room:', props.roomId)
+                
+                const response = await fetch(`/api/manual-progress-check/${props.roomId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                
+                const data = await response.json()
+                console.log('📊 Manual progress check response:', data)
+                
+                if (data.success) {
+                    // The notification will be received via socket, no need to show it here
+                    console.log('📊 Manual progress check completed successfully')
+                } else {
+                    console.error('Failed to trigger manual progress check:', data.error)
+                    // Show error notification
+                    showProgressCheckNotification(`Error: ${data.error}`)
+                }
+                
+            } catch (error) {
+                console.error('Error triggering manual progress check:', error)
+                showProgressCheckNotification('Error checking progress. Please try again.')
+            } finally {
+                isCheckingProgress.value = false
+            }
+        }
         
         const loadInterventionSettings = async () => {
             try {
@@ -136,12 +235,36 @@ export default defineComponent({
         
         onMounted(() => {
             loadInterventionSettings()
+            
+            // Set up socket listener for progress check notifications
+            if (props.socket) {
+                props.socket.on('progress_check_notification', (data) => {
+                    console.log('📊 Progress check notification received:', data)
+                    showProgressCheckNotification(data.content)
+                })
+            }
+        })
+        
+        // Cleanup on unmount
+        onUnmounted(() => {
+            if (progressNotificationTimer) {
+                clearTimeout(progressNotificationTimer)
+            }
+            if (props.socket) {
+                props.socket.off('progress_check_notification')
+            }
         })
         
         return {
             showInterventionSettings,
             interventionSettings,
-            handleSaveInterventionSettings
+            handleSaveInterventionSettings,
+            showProgressNotification,
+            progressNotificationText,
+            showProgressCheckNotification,
+            dismissProgressNotification,
+            isCheckingProgress,
+            triggerManualProgressCheck
         }
     }
 })
@@ -155,6 +278,9 @@ export default defineComponent({
     padding: 1rem;
     box-shadow: 0 2px 8px rgba(14, 165, 233, 0.1);
     width: 100%;
+    position: relative;
+    z-index: 10;
+    overflow: visible;
 }
 
 .ai-indicator {
@@ -173,6 +299,90 @@ export default defineComponent({
     align-items: center;
     justify-content: center;
     box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    position: relative;
+}
+
+/* Progress Check Notification Bubble */
+.progress-notification-bubble {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    border: 2px solid #007acc;
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 12px rgba(0, 122, 204, 0.15);
+    z-index: 10000;
+    max-width: 300px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+}
+
+.progress-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.progress-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.progress-text {
+    color: #333;
+    font-size: 14px;
+    line-height: 1.4;
+    flex: 1;
+}
+
+.progress-dismiss {
+    color: #666;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.progress-dismiss:hover {
+    background-color: rgba(0, 122, 204, 0.1);
+}
+
+/* Animation for progress notification */
+.progress-notification-enter-active,
+.progress-notification-leave-active {
+    transition: all 0.3s ease;
+}
+
+.progress-notification-enter-from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9);
+}
+
+.progress-notification-leave-to {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9);
+}
+
+/* Animation for progress notification */
+.progress-notification-enter-active {
+    transition: all 0.3s ease;
+}
+
+.progress-notification-leave-active {
+    transition: all 0.2s ease;
+}
+
+.progress-notification-enter-from {
+    opacity: 0;
+    transform: scale(0.8) translateY(-10px);
+}
+
+.progress-notification-leave-to {
+    opacity: 0;
+    transform: scale(0.9) translateY(-5px);
 }
 
 .ai-emoji {
@@ -318,5 +528,36 @@ export default defineComponent({
 .reflection-stop-button:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(252, 165, 165, 0.4);
+}
+
+.progress-check-button {
+    background: #ffffff;
+    color: #0ea5e9;
+    border: 1px solid #0ea5e9;
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(14, 165, 233, 0.2);
+}
+
+.progress-check-button:hover:not(:disabled) {
+    background: #f0f9ff;
+    border-color: #0284c7;
+    color: #0284c7;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(14, 165, 233, 0.3);
+}
+
+.progress-check-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    background: #f8fafc;
+    color: #94a3b8;
+    border-color: #cbd5e1;
 }
 </style>

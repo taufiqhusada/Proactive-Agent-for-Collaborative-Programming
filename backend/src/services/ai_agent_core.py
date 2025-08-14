@@ -51,7 +51,8 @@ class AIAgent:
         self.intervention_service = AIInterventionService(
             ai_decision_callback=self._centralized_ai_decision,
             send_message_callback=self.send_ai_message,
-            get_conversation_history_callback=lambda: self.conversation_history
+            get_conversation_history_callback=lambda: self.conversation_history,
+            send_progress_notification_callback=self.send_progress_check_notification
         )
         
         self.code_analysis_service = AICodeAnalysisService(
@@ -61,7 +62,7 @@ class AIAgent:
         # Reflection service will be obtained when needed (it may not be initialized yet)
         self.reflection_service = None
 
-    def _centralized_ai_decision(self, room_id: str, is_reflection: bool = False, is_progress_check: bool = False) -> tuple[bool, str]:
+    def _centralized_ai_decision(self, room_id: str, is_reflection: bool = False, is_progress_check: bool = False, is_manual_progress: bool = False) -> tuple[bool, str]:
         """Central AI decision making: Should intervene and what to say"""
         if not self.client:
             print("🚫 AI WILL NOT INTERVENE: No LLM client available")
@@ -88,7 +89,10 @@ class AIAgent:
         
         # Handle 30-second progress check
         if is_progress_check:
-            return self._handle_progress_check(room_id, context)
+            if is_manual_progress:
+                return self._handle_manual_progress_check(room_id, context)
+            else:
+                return self._handle_progress_check(room_id, context)
 
         # Get recent conversation context (last 5 messages)
         recent_conversation = ""
@@ -100,14 +104,14 @@ class AIAgent:
         is_direct_mention = last_message and self._is_direct_ai_mention(last_message.content)
         
         # Check if user is asking for syntax/code
-        is_syntax_request = last_message and self._is_syntax_request(last_message.content)
+        # is_syntax_request = last_message and self._is_syntax_request(last_message.content)
         
         # Build AI message history context to avoid repetition
         ai_history_context = self._build_ai_history_context(context)
         
         # Add special syntax request guidance
-        if is_syntax_request:
-            ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES!"
+        # if is_syntax_request:
+            # ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES!"
         
         # Adjust prompt based on whether this is a direct mention
         if is_direct_mention:
@@ -126,23 +130,20 @@ class AIAgent:
 
                             {ai_history_context}
 
-                            PROGRESSIVE LEARNING APPROACH - Help users learn step by step:
+                            PROGRESSIVE LEARNING APPROACH - Help users learn briefly:
                             - CRITICAL: Look at your recent messages above - you CANNOT repeat the same type of response
                             - If you've already asked questions, DON'T ask more questions - give concrete answers
                             - If you've given general hints, provide SPECIFIC details or examples
                             - When they say "I don't know" repeatedly - they need concrete help, NOT more questions
                             - FOLLOW THE GUIDANCE LEVEL: Each message must be more concrete than the previous
                             - Balance learning with being actually helpful - don't leave them completely stuck
+                            - IMPORTANT: Do NOT provide complete solutions - give brief, focused help
 
-                            Response format:
-                            - If you should help: "YES|[MUST be different from your previous messages - be more concrete - 15-50 words]"
-                            - If inappropriate request: "NO"
-
-                            REMEMBER: DO NOT repeat your previous approach - if you asked questions before, give concrete answers now!
+                            Provide a helpful response (10-30 words). Be different from your previous messages and more concrete.
 
                             Your response:"""
         else:
-            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. Should you help in this conversation?
+            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING.
 
                         Problem Context:
                         - Problem title: {context.problem_title or "General coding"}
@@ -157,19 +158,15 @@ class AIAgent:
 
                         {ai_history_context}
 
-                        PROGRESSIVE INTERVENTION - Guide learning appropriately:
+                        PROGRESSIVE INTERVENTION - Guide learning briefly:
                         - CRITICAL: Look at your recent messages above - you CANNOT give the same type of response again
                         - If you've asked questions before, DON'T ask more questions - provide specific answers
                         - If you gave general hints before, give CONCRETE examples or show actual code
                         - When they say "I don't know" repeatedly: They need specific help, NOT more questions
-                        - If they're discussing actively: Let them work it out
-                        - If they need encouragement: Give positive reinforcement  
                         - FOLLOW THE GUIDANCE LEVEL: Each response must be MORE CONCRETE than your previous ones
-                        Response format:
-                        - If you should help: "YES|[MUST be different from previous messages - escalate to more concrete - 10-40 words]"  
-                        - If they're doing fine: "NO"
-
-                        CRITICAL: DO NOT repeat your previous approach - if you gave questions before, give concrete examples now!
+                        - IMPORTANT: Do NOT provide complete solutions - give brief, focused help
+                        
+                        Provide a helpful response (10-30 words). Be different from your previous messages and escalate to more concrete help.
 
                         Your response:"""
             
@@ -180,30 +177,23 @@ class AIAgent:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are Bob, a learning-focused pair programming assistant. Provide progressive hints and guidance to help users learn, not complete solutions. Start with conceptual hints, then provide syntax hints only when specifically requested, and avoid giving full solutions unless users are completely stuck."},
+                    {"role": "system", "content": "You are Bob, a learning-focused pair programming assistant. NEVER provide code snippets, complete solutions, or full implementations. Do NOT use code blocks or show syntax. Only give brief conceptual hints as statements, not questions."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=150 if is_direct_mention else 100,
+                max_tokens=90 if is_direct_mention else 60,
                 temperature=0.7
             )
             
             llm_response = response.choices[0].message.content.strip()
             
-            if llm_response.startswith("YES|"):
-                # Parse the response: YES|MESSAGE
-                parts = llm_response.split("|", 1)
-                if len(parts) >= 2:
-                    intervention_message = parts[1]
-                    
-                    mention_type = "DIRECT MENTION" if is_direct_mention else "IDLE INTERVENTION"
-                    print(f"✅ AI WILL INTERVENE ({mention_type}): {intervention_message[:50]}...")
-                    return True, intervention_message
-                else:
-                    print(f"❌ LLM response format error: {llm_response}")
-                    return False, ""
+            # Always respond with whatever the LLM generates (no YES/NO parsing)
+            if llm_response:
+                mention_type = "DIRECT MENTION" if is_direct_mention else "IDLE INTERVENTION"
+                print(f"✅ AI WILL INTERVENE ({mention_type}): {llm_response[:50]}...")
+                return True, llm_response
             else:
                 mention_type = "direct mention" if is_direct_mention else "idle period"
-                print(f"🚫 AI WILL NOT INTERVENE: Decided not to respond to {mention_type}")
+                print(f"🚫 AI generated empty response for {mention_type}")
                 return False, ""
                 
         except Exception as e:
@@ -212,6 +202,14 @@ class AIAgent:
 
     def _handle_progress_check(self, room_id: str, context: ConversationContext) -> tuple[bool, str]:
         """Handle 30-second progress check intervention"""
+        return self._handle_progress_check_internal(room_id, context, is_manual=False)
+
+    def _handle_manual_progress_check(self, room_id: str, context: ConversationContext) -> tuple[bool, str]:
+        """Handle manual progress check - always returns feedback"""
+        return self._handle_progress_check_internal(room_id, context, is_manual=True)
+
+    def _handle_progress_check_internal(self, room_id: str, context: ConversationContext, is_manual: bool = False) -> tuple[bool, str]:
+        """Internal method to handle progress checks"""
         try:
             # Build conversation context (last 8 messages for better context)
             recent_conversation = ""
@@ -226,8 +224,13 @@ class AIAgent:
             ai_history_context = self._build_ai_history_context(context)
             
             # Create progress check prompt
-            prompt = f"""You are Bob, an AI pair programming assistant. You're doing a 30-second progress check to see if users are on track.
-
+            manual_instruction = """
+**MANUAL PROGRESS CHECK**: This was triggered manually by the user - ALWAYS provide feedback!
+For manual checks, even if users are doing well, provide encouraging and specific feedback about their progress.
+""" if is_manual else ""
+            
+            prompt = f"""You are Bob, an AI pair programming assistant. You're doing a progress check to see if users are on track.
+{manual_instruction}
 Problem Context:
 {problem_info}
 Language: {context.programming_language}
@@ -251,7 +254,7 @@ RED FLAGS (should intervene):
 - Misunderstanding fundamental concepts
 - One person dominating, other not participating
 
-GREEN FLAGS (don't intervene):
+GREEN FLAGS ({"provide positive feedback" if is_manual else "don't intervene"}):
 - Making steady progress, even if slow
 - Having productive discussions about approach
 - Recently made progress or breakthroughs  
@@ -269,10 +272,11 @@ INTERVENTION TYPES:
 - ENCOURAGE: "You're on the right track! Consider focusing on [specific next step]."
 - FACILITATE: "What does your partner think about this approach?" or "Can you explain your idea to your partner?"
 - HINT: "For this type of problem, you might want to think about [specific concept/approach]."
+- POSITIVE: "Great work! You're [specific positive observation]. Keep it up!"
 
 Response format:
 - If should intervene: "YES|[intervention type]|[helpful message 15-40 words]"
-- If making good progress: "NO|[reason why they're doing well 10-30 words]"
+- If making good progress: "{"POSITIVE|[specific positive feedback 15-40 words]" if is_manual else "NO|[reason why they're doing well 10-30 words]"}"
 
 Your response:"""
             
@@ -302,18 +306,35 @@ Your response:"""
                 else:
                     print(f"❌ Progress check format error: {llm_response}")
                     return False, ""
+            elif llm_response.startswith("POSITIVE|"):
+                # Parse: POSITIVE|MESSAGE (for manual checks - return as positive feedback)
+                parts = llm_response.split("|", 1)
+                if len(parts) >= 2:
+                    positive_message = parts[1]
+                    print(f"📊 Manual progress check: Positive feedback - {positive_message[:50]}...")
+                    return True, positive_message  # Return True so it gets sent as notification
+                else:
+                    print(f"❌ Progress check format error: {llm_response}")
+                    return False, ""
             elif llm_response.startswith("NO|"):
                 # Parse: NO|REASON
                 parts = llm_response.split("|", 1)
                 if len(parts) >= 2:
                     reason = parts[1]
                     print(f"📊 Progress check: Users making good progress in room {room_id} - Reason: {reason}")
+                    # For manual checks, convert NO responses to positive feedback
+                    if is_manual:
+                        return True, f"Good progress! {reason}"
                     return False, ""
                 else:
                     print(f"📊 Progress check: Users making good progress in room {room_id}")
+                    if is_manual:
+                        return True, "Good progress! You're on the right track."
                     return False, ""
             else:
                 print(f"📊 Progress check: Users making good progress in room {room_id}")
+                if is_manual:
+                    return True, "Good progress! Keep up the good work."
                 return False, ""
                 
         except Exception as e:
@@ -351,7 +372,6 @@ Your response:"""
             print(f"   {i+1}. {msg[:50]}...")
             
         if not context.ai_message_history:
-            return "REPETITION CHECK: No recent AI messages - this is your first intervention in a while."
             return "REPETITION CHECK: No recent AI messages - this is your first intervention in a while."
         
         recent_ai_messages = context.ai_message_history[-5:]  # Last 5 AI messages
@@ -479,8 +499,8 @@ Your response:"""
         context = self.conversation_history[room_id]
         context.messages.append(message)
         
-        # Track AI messages for progressive hints
-        if message.userId == 'ai_agent_bob':  # This is an AI message
+        # Track AI messages for progressive hints (only for non-reflection messages)
+        if message.userId == 'ai_agent_bob' and not message_data.get('isReflection', False):
             self._track_ai_message(context, message.content)
         
         # Update last message time for 5-second idle timer
@@ -610,15 +630,72 @@ Your response:"""
             print("⚠️  No centralized intervention message found")
             return None
 
-    def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False):
-        """Send an AI message to the chat room"""
-        # Track AI message for progressive hints (only for non-reflection messages)
-        if not is_reflection and room_id in self.conversation_history:
-            context = self.conversation_history[room_id]
-            self._track_ai_message(context, content)
+    def send_progress_check_notification(self, room_id: str, content: str):
+        """Send a progress check notification as a popup bubble instead of chat message"""
+        notification = {
+            'id': f"progress_check_{int(time.time() * 1000)}",
+            'content': content,
+            'timestamp': datetime.now().isoformat(),
+            'room': room_id,
+            'type': 'progress_check'
+        }
         
+        print(f"📊 Sending progress check notification to room {room_id}: {content[:50]}...")
+        
+        # Send as a special progress check notification event instead of chat_message
+        self.socketio.emit('progress_check_notification', notification, room=room_id, namespace='/ws')
+        
+        # Add to conversation context for tracking but WITHOUT updating last_ai_response timestamp
+        # This ensures progress checks don't interfere with 5-second idle intervention timing
+        manual_message = {
+            'id': f"ai_{int(time.time() * 1000)}",
+            'content': content,
+            'username': self.agent_name,
+            'userId': self.agent_id,
+            'timestamp': datetime.now().isoformat(),
+            'room': room_id,
+            'isAutoGenerated': True,
+            'isProgressCheck': True  # Special flag to avoid updating last_ai_response
+        }
+        
+        # Add to context but skip timestamp updates for progress checks
+        self._add_progress_check_to_context(manual_message)
+
+    def _add_progress_check_to_context(self, message_data: Dict[str, Any]):
+        """Add progress check message to context without updating last_ai_response timestamp"""
+        room_id = message_data.get('room')
+        if not room_id:
+            return
+            
+        message = Message(
+            id=message_data.get('id', ''),
+            content=message_data.get('content', ''),
+            username=message_data.get('username', 'Unknown'),
+            userId=message_data.get('userId', ''),
+            timestamp=message_data.get('timestamp', ''),
+            room=room_id,
+            isAutoGenerated=message_data.get('isAutoGenerated', False)
+        )
+        
+        if room_id not in self.conversation_history:
+            self.conversation_history[room_id] = ConversationContext(
+                messages=[],
+                room_id=room_id
+            )
+            
+        context = self.conversation_history[room_id]
+        context.messages.append(message)
+        
+        # DO NOT update last_ai_response timestamp for progress checks
+        # DO NOT track AI message for progressive hints (to avoid interference)
+        # DO NOT update last_message_time (this is for 5s idle intervention)
+        
+        print(f"📊 Progress check message added to context in room {room_id} (no timestamp updates)")
+
+    def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False, is_progress_check: bool = False):
+        """Send an AI message to the chat room"""        
         message = self.audio_service.send_ai_message(
-            room_id, content, is_reflection, False, self.conversation_history
+            room_id, content, is_reflection, False, self.conversation_history, is_progress_check
         )
         
         # Always add AI message to conversation context, even if audio service returns None
@@ -636,7 +713,8 @@ Your response:"""
                 'timestamp': datetime.now().isoformat(),
                 'room': room_id,
                 'isAutoGenerated': True,
-                'isReflection': is_reflection
+                'isReflection': is_reflection,
+                'isProgressCheck': is_progress_check
             }
             self.add_message_to_context(manual_message)
             print(f"🤖 Manually added AI message to context: {content[:50]}...")
@@ -907,6 +985,20 @@ Your response:"""
         except Exception as e:
             print(f"❌ Error getting room state summary: {e}")
             return {"error": str(e)}
+
+    def manual_progress_check(self, room_id: str) -> tuple[bool, str]:
+        """Manually trigger a progress check that always returns feedback"""
+        try:
+            context = self.conversation_history.get(room_id)
+            if not context:
+                return False, "No conversation context found for this room."
+            
+            # Use the centralized AI decision with manual progress flag
+            return self._centralized_ai_decision(room_id, is_progress_check=True, is_manual_progress=True)
+            
+        except Exception as e:
+            print(f"❌ Error in manual progress check: {e}")
+            return False, f"Error performing progress check: {str(e)}"
 
     # Progress tracking methods
     # Progress tracking methods

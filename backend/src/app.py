@@ -1191,6 +1191,11 @@ def start_session():
         # Mark session as started and lock AI mode
         manager.set_session_started(room_id, True)
         
+        # Reset AI context for fresh session (regardless of AI mode)
+        # Note: This will be done again in send_session_start_greeting if AI is enabled
+        # but it's good to ensure reset happens regardless of AI mode
+        print(f"🔄 Ensuring AI context reset for session start in room {room_id}")
+        
         # Send Bob greeting for session start only if AI is enabled
         current_ai_mode = manager.get_ai_mode(room_id)
         if current_ai_mode != 'none':
@@ -1270,6 +1275,47 @@ def update_intervention_settings():
         
     except Exception as e:
         print(f"❌ Error updating intervention settings: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/manual-progress-check/<room_id>', methods=['POST'])
+def manual_progress_check(room_id):
+    """Manually trigger a progress check for a room"""
+    try:
+        if not room_id:
+            return jsonify({'success': False, 'error': 'Room ID is required'}), 400
+        
+        # Perform manual progress check using the new method
+        should_intervene, message = ai_agent.manual_progress_check(room_id)
+        
+        # Always send a notification regardless of whether intervention is needed
+        if should_intervene and message:
+            # Send as popup notification
+            ai_agent.send_progress_check_notification(room_id, message)
+            result_message = message
+            intervention_needed = True
+        else:
+            # Fallback positive message if something went wrong
+            import random
+            positive_messages = [
+                "Great progress! You're on the right track. Keep up the good work! 🎉",
+                "Looking good! Your approach seems solid. Continue working together! 👍",
+                "Nice work! You're making steady progress. Stay focused! 💪"
+            ]
+            result_message = random.choice(positive_messages)
+            ai_agent.send_progress_check_notification(room_id, result_message)
+            intervention_needed = False
+        
+        print(f"📊 Manual progress check completed for room {room_id}: intervention_needed={intervention_needed}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Manual progress check completed',
+            'intervention_needed': intervention_needed,
+            'feedback': result_message
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in manual progress check: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/code-executions/<room_id>', methods=['GET'])

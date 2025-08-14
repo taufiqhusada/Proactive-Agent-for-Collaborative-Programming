@@ -50,10 +50,7 @@ class ScaffoldingService:
                         5. Students must fill in ALL the actual implementation
 
                         SCAFFOLDING REQUIREMENTS:
-                        - Function signatures with TODO comments for body
-                        - Class definitions with TODO comments for methods
-                        - Control structures with TODO comments for conditions/logic
-                        - Variable declarations with TODO comments for values
+                        - TODO comments
                         - Clear, descriptive TODO guidance
                         - NO actual implementation or solutions
 
@@ -66,19 +63,19 @@ class ScaffoldingService:
                         GOOD scaffolding examples:
                         Comment: "# Create a function to calculate average"
                         Output: 
-                        def calculate_average(numbers):
-                            # TODO: calculate sum of all numbers
-                            # TODO: divide sum by count of numbers
-                            # TODO: return the average
+                        
+                          # TODO: calculate sum of all numbers
+                          # TODO: divide sum by count of numbers
+                          # TODO: return the average
 
                         Comment: "// Implement bubble sort"
                         Output:
-                        function bubbleSort(arr) {{
-                            # TODO: loop through array multiple times
-                            # TODO: compare adjacent elements
-                            # TODO: swap if in wrong order
-                            # TODO: return sorted array
-                        }}
+                      
+                          # TODO: loop through array multiple times
+                          # TODO: compare adjacent elements
+                          # TODO: swap if in wrong order
+                          # TODO: return sorted array
+                        
 
                         BAD examples (too much solution):
                         - Any actual calculations or logic
@@ -105,9 +102,9 @@ class ScaffoldingService:
                 return None
             
             # Additional safety check: reject if response is too long (likely a solution)
-            if len(scaffolding_code.split('\n')) > 10:
-                print("⚠️  Scaffolding response too long, likely contains solutions. Rejecting.")
-                return None
+            # if len(scaffolding_code.split('\n')) > 10:
+            #     print("⚠️  Scaffolding response too long, likely contains solutions. Rejecting.")
+            #     return None
             
             # Return scaffolding result
             return {
