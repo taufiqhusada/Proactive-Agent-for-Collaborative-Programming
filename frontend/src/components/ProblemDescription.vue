@@ -120,17 +120,17 @@ export default defineComponent({
                 `,
                 examples: [
                     {
-                        input: "prices =  [40, 60, 20, 80, 90], gift_card = 100, chosen_index = 1",
+                        input: "prices =  [40, 60, 20, 80, 90], gift_card_value = 100, chosen_index = 1",
                         output: "0",
                         explanation: "If user chooses item at index 1 (price 60), suggest index 0 (price 40) to use the gift card."
                     },
                     {
-                        input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
+                        input: "prices = [40, 60, 20, 80, 90], gift_card_value = 100",
                         output: "[[0,1],[2,3]]",
                         explanation: "Items at indices [0,1] and [2,3] both sum to 100."
                     },
                     {
-                        input: "prices = [40, 60, 20, 80, 90], gift_card = 100",
+                        input: "prices = [40, 60, 20, 80, 90], gift_card_value = 100",
                         output: "[2,3]",
                         explanation: "[2,3] is chosen because it includes price 80 (at index 3), which is the highest individual item price among all valid pairs. Valid pairs: [0,1] has max price 60, [2,3] has max price 80, so [2,3] wins."
                     }
@@ -149,8 +149,8 @@ export default defineComponent({
                     <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
                     <ul>
                         <li><strong>Subtask 1 - Daily Average:</strong> Calculate the overall average steps per day across all recorded days.</li>
-                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
-                        <li><strong>Subtask 3 - Goal Achievement Streak:</strong> Find the shortest consecutive days needed to reach or exceed a target step sum.</li>
+                        <li><strong>Subtask 2 - Longest Goal Streak:</strong> Find the longest consecutive streak of days where the user met or exceeded a target daily step goal.</li>
+                        <li><strong>Subtask 3 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
                     </ul>
                 `,
                 examples: [
@@ -160,14 +160,14 @@ export default defineComponent({
                         explanation: "Sum of all steps (71000) divided by number of days (7)."
                     },
                     {
+                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], target_daily = 9000",
+                        output: "3",
+                        explanation: "Longest streak where daily steps ≥ 9000: days with [15000, 9000, 11000] gives streak of 3 days."
+                    },
+                    {
                         input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], k = 3",
                         output: "11666.67",
                         explanation: "Best 3-day average is from days with steps [15000, 9000, 11000] gives 11666.67."
-                    },
-                    {
-                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], target = 31000",
-                        output: "3",
-                        explanation: "Shortest subarray with sum ≥ 31000 is [10000, 6000, 15000] with length 3 and sum 31000."
                     }
                 ],
                 constraints: [
@@ -182,28 +182,28 @@ export default defineComponent({
                 difficulty: "Medium",
                 description: `
                     <p><strong>Scenario:</strong> A meeting room booking system that manages time slots for conference rooms. Each booking is represented as an interval [start_time, end_time].</p>
-                    <p>Implement a Meeting Room Scheduler that optimizes room usage by merging overlapping bookings.</p>
+                    <p>Implement a Meeting Room Analyzer that provides insights on meeting schedules and helps optimize room usage.</p>
                     <ul>
-                        <li><strong>Subtask 1 - Sort Bookings:</strong> Sort all meeting intervals by their start time.</li>
-                        <li><strong>Subtask 2 - Merge Overlapping:</strong> Merge all overlapping or adjacent meeting intervals.</li>
-                        <li><strong>Subtask 3 - Add New Meeting:</strong> Insert a new meeting interval and merge with existing bookings as needed.</li>
+                        <li><strong>Subtask 1 - Longest Meeting:</strong> Find the meeting with the longest duration.</li>
+                        <li><strong>Subtask 2 - Detect Conflicts:</strong> Identify all pairs of meetings that have overlapping time intervals.</li>
+                        <li><strong>Subtask 3 - Merge Overlapping:</strong> Merge all overlapping or adjacent meeting intervals into a single interval.</li>
                     </ul>
                 `,
                 examples: [
                     {
-                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]",
-                        output: "[[1,3],[2,5],[4,7],[9,14],[15,18]]",
-                        explanation: "Intervals sorted by start time."
+                        input: "intervals = [[1,4],[6,10],[2,5],[8,12]]",
+                        output: "[6,10]",
+                        explanation: "Meeting [6,10] has the longest duration of 4 time units."
                     },
                     {
-                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]",
-                        output: "[[1,7],[9,14],[15,18]]",
-                        explanation: "After merging: [1,3], [2,5], and [4,7] all overlap and merge to [1,7]. [9,14] and [15,18] remain separate."
+                        input: "intervals = [[1,4],[6,10],[2,5],[8,12]]",
+                        output: "[[1,4],[2,5]], [[6,10],[8,12]]",
+                        explanation: "Two overlapping pairs: [1,4] overlaps with [2,5], and [6,10] overlaps with [8,12]."
                     },
                     {
-                        input: "intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]], new_interval = [8,16]",
-                        output: "[[1,7],[8,18]]",
-                        explanation: "Added [8,16], which bridges [9,14] and [15,18] to create [8,18], while [1,7] remains separate."
+                        input: "intervals = [[1,4],[6,10],[2,5],[8,12]]",
+                        output: "[[1,5],[6,12]]",
+                        explanation: "After merging: [1,4] and [2,5] merge to [1,5], and [6,10] and [8,12] merge to [6,12]."
                     }
                 ],
                 constraints: [
@@ -217,79 +217,78 @@ export default defineComponent({
 
         // Boilerplate code for Gift Card Purchase Assistant (Python)
         const giftCardBoilerplate = `prices = [40, 60, 20, 80, 90]
-gift_card = 100
+gift_card_value = 100
 
-def suggest_pair(prices, gift_card, chosen_index):
+def suggest_pair(prices, gift_card_value, chosen_index):
   # Subtask 1: Find the index of an item that pairs with the chosen item to use the gift card exactly
 
   return None
 
-def find_all_pairs(prices, gift_card):
+def find_all_pairs(prices, gift_card_value):
   # Subtask 2: Return all pairs of item indices whose prices add up exactly to the gift card value
 
   return []
 
-def find_highest_pair(prices, gift_card):
+def find_highest_pair(prices, gift_card_value):
   #  Subtask 3: Find the pair (by indices) that includes the highest individual item price among all valid pairs
   #  Return empty list [] if no valid pairs exist
     
   return []
 
 # Example usage:
-print(suggest_pair(prices, gift_card, 1))
-print(find_all_pairs(prices, gift_card))
-print(find_highest_pair(prices, gift_card))
+print(suggest_pair(prices, gift_card_value, 1))
+print(find_all_pairs(prices, gift_card_value))
+print(find_highest_pair(prices, gift_card_value))
                 `;
 
         // Boilerplate code for Step Tracker Insight (Python)
         const stepTrackerBoilerplate = `steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000]
+target_daily = 9000
 k = 3
-target = 30000
 
 def daily_average(steps):
   #  Subtask 1: Calculate the overall average steps per day across all recorded days
 
   return 0.0
 
-def best_k_day_streak(steps, k):
-  #  Subtask 2: Find the highest average step count within any k consecutive days
-
-  return 0.0
-
-def shortest_perfect_goal_streak(steps, target):
-  #  Subtask 3: Find the shortest consecutive days needed to reach or exceed a target step sum
+def longest_goal_streak(steps, target_daily):
+  #  Subtask 2: Find the longest consecutive streak of days where the user met or exceeded a target daily step goal
 
   return 0
 
+def best_k_day_streak(steps, k):
+  #  Subtask 3: Find the highest average step count within any k consecutive days
+
+  return 0.0
+
 # Example usage:
 print(f"Daily average: {daily_average(steps)}")
+print(f"Longest goal streak for {target_daily} steps: {longest_goal_streak(steps, target_daily)}")
 print(f"Best {k}-day streak average: {best_k_day_streak(steps, k)}")
-print(f"Shortest streak to reach {target}: {shortest_perfect_goal_streak(steps, target)}")
                 `;
 
         // Boilerplate code for Meeting Room Scheduler (Python)
-        const meetingRoomBoilerplate = `intervals = [[1,3],[9,14],[2,5],[4,7],[15,18]]
-new_interval = [8,16]
+        const meetingRoomBoilerplate = `intervals = [[1,4],[6,10],[2,5],[8,12]]
 
-def sort_intervals(intervals):
-  #  Subtask 1: Sort all meeting intervals by their start time
-
-  return []
-
-def merge_intervals(intervals):
-  #  Subtask 2: Merge all overlapping or adjacent meeting intervals
+def longest_meeting(intervals):
+  #  Subtask 1: Find the meeting with the longest duration
 
   return []
 
-def insert_and_merge(intervals, new_interval):
-  #  Subtask 3: Insert a new meeting interval and merge with existing bookings as needed
+def detect_conflicts(intervals):
+  #  Subtask 2: Identify all pairs of meetings that have overlapping time intervals
+
+  return []
+
+def merge_overlapping(intervals):
+  #  Subtask 3: Merge all overlapping or adjacent meeting intervals into a single interval
 
   return []
 
 # Example usage:
-print(f"Sorted intervals: {sort_intervals(intervals)}")
-print(f"Merged intervals: {merge_intervals(intervals)}")
-print(f"After inserting {new_interval}: {insert_and_merge(intervals, new_interval)}")
+print(f"Longest meeting: {longest_meeting(intervals)}")
+print(f"Conflicting pairs: {detect_conflicts(intervals)}")
+print(f"Merged intervals: {merge_overlapping(intervals)}")
                 `;
 
         // Boilerplate code for First Repeated Number (Python)
