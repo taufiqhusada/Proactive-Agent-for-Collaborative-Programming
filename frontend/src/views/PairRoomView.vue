@@ -124,6 +124,16 @@
             @analyze="handlePopupAnalyze"
             @close="handlePopupClose"
         />
+
+        <!-- TODO Reveal Popup -->
+        <TodoRevealPopup 
+            :visible="showTodoRevealPopup"
+            :position="todoPopupPosition"
+            :todo-data="todoData"
+            @reveal="handleTodoReveal"
+            @analyze="handleTodoAnalyze"
+            @close="handleTodoPopupClose"
+        />
     </div>
 </template>
 
@@ -146,6 +156,7 @@ import AIModeToggle from '@/components/AIModeToggle.vue'
 import CodeIssuePanel from '@/components/CodeIssuePanel.vue'
 import CodeRunner from '@/components/CodeRunner.vue'
 import CodeAnalysisPopup from '@/components/CodeAnalysisPopup.vue'
+import TodoRevealPopup from '@/components/TodoRevealPopup.vue'
 
 // Import composables
 import { useCodeAnalysis } from '@/composables/useCodeAnalysis'
@@ -165,6 +176,7 @@ export default defineComponent({
         CodeIssuePanel,
         CodeRunner,
         CodeAnalysisPopup,
+        TodoRevealPopup,
     },
 
     setup() {
@@ -205,6 +217,11 @@ export default defineComponent({
         const showCodeAnalysisPopup = ref(false)
         const popupPosition = ref({ x: 0, y: 0 })
         const popupCodeBlock = ref(null)
+
+        // TODO Reveal Popup State
+        const showTodoRevealPopup = ref(false)
+        const todoPopupPosition = ref({ x: 0, y: 0 })
+        const todoData = ref(null)
 
         const languages = {
             python: python(),
@@ -485,6 +502,90 @@ export default defineComponent({
         // Make the popup function globally available for CodeMirror extensions
         window.showCodeAnalysisPopup = showCodeAnalysisPopupAt
 
+        // TODO Reveal Popup Handlers
+        const handleTodoReveal = async (todoData) => {
+            console.log('🎯 TODO reveal triggered for:', todoData)
+            // Close the popup
+            showTodoRevealPopup.value = false
+            
+            try {
+                // Call the backend API to get the generated code
+                const response = await fetch('/api/reveal-todo', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        code: todoData.code,
+                        language: todoData.language,
+                        cursorLine: todoData.cursorLine,
+                        roomId: roomId,
+                        problemContext: currentProblem.value?.description || ''
+                    })
+                })
+                
+                const result = await response.json()
+                
+                if (result.success && result.generatedCode) {
+                    console.log('✅ Generated TODO code:', result.generatedCode)
+                    
+                    // Replace the TODO line with the generated code in the editor
+                    if (view.value) {
+                        const doc = view.value.state.doc
+                        const line = doc.line(todoData.cursorLine + 1) // Convert back to 1-based
+                        
+                        // Apply indentation to the generated code line
+                        const todoLineText = line.text
+                        const indentMatch = todoLineText.match(/^(\s*)/)
+                        const indent = indentMatch ? indentMatch[1] : ''
+                        
+                        // Apply same indentation to generated code
+                        const indentedCode = indent + result.generatedCode.trim()
+                        
+                        // Replace the TODO line with the generated code
+                        view.value.dispatch({
+                            changes: {
+                                from: line.from,
+                                to: line.to,
+                                insert: indentedCode
+                            }
+                        })
+                        
+                        console.log('📝 Replaced TODO line with generated code')
+                    }
+                } else {
+                    console.error('❌ Failed to generate TODO code:', result.message || 'Unknown error')
+                }
+            } catch (error) {
+                console.error('❌ Error calling TODO reveal API:', error)
+            }
+        }
+
+        const handleTodoPopupClose = () => {
+            showTodoRevealPopup.value = false
+            todoData.value = null
+        }
+
+        const handleTodoAnalyze = (codeBlock) => {
+            console.log('🔍 TODO Analyze triggered for code block:', codeBlock)
+            // Close TODO popup
+            showTodoRevealPopup.value = false
+            // Show code analysis popup instead
+            popupPosition.value = todoPopupPosition.value
+            popupCodeBlock.value = codeBlock
+            showCodeAnalysisPopup.value = true
+        }
+
+        // Function to show TODO popup at a specific position (will be called from CodeMirror extension)
+        const showTodoRevealPopupAt = (position, todoInfo) => {
+            todoPopupPosition.value = position
+            todoData.value = todoInfo
+            showTodoRevealPopup.value = true
+        }
+
+        // Make the TODO popup function globally available for CodeMirror extensions
+        window.showTodoRevealPopup = showTodoRevealPopupAt
+
         return {
             code,
             selectedLanguage,
@@ -541,6 +642,14 @@ export default defineComponent({
             popupCodeBlock,
             handlePopupAnalyze,
             handlePopupClose,
+            
+            // TODO Reveal Popup
+            showTodoRevealPopup,
+            todoPopupPosition,
+            todoData,
+            handleTodoReveal,
+            handleTodoAnalyze,
+            handleTodoPopupClose,
         }
     }
 })

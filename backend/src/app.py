@@ -119,6 +119,10 @@ ai_agent = init_ai_agent(socketio)
 scaffolding_service = ScaffoldingService()
 individual_ai_service = init_individual_ai_service(socketio)
 
+# Initialize TODO Reveal Service
+from services.todo_reveal_service import TodoRevealService
+todo_reveal_service = TodoRevealService()
+
 # Initialize Database
 init_db()
 
@@ -1173,6 +1177,79 @@ def generate_scaffolding():
         return jsonify({
             'error': str(e),
             'hasScaffolding': False
+        }), 500
+
+@app.route('/api/reveal-todo', methods=['POST'])
+def reveal_todo():
+    """Generate code implementation for TODO comments using LLM"""
+    try:
+        data = request.json
+        code = data.get('code', '')
+        language = data.get('language', 'python')
+        cursor_line = data.get('cursorLine', 0)
+        room_id = data.get('roomId')
+        problem_context = data.get('problemContext', '')
+        
+        print(f"🎯 TODO Reveal Request:")
+        print(f"  Language: {language}")
+        print(f"  Cursor Line: {cursor_line}")
+        print(f"  Room ID: {room_id}")
+        
+        # Check AI mode if room_id is provided
+        if room_id:
+            current_ai_mode = manager.get_ai_mode(room_id)
+            if current_ai_mode == 'none':
+                print(f"🚫 TODO reveal disabled - AI mode is 'none' for room {room_id}")
+                return jsonify({
+                    'success': False,
+                    'message': 'TODO reveal disabled - No AI mode is active'
+                })
+            print(f"✅ TODO reveal allowed - AI mode is '{current_ai_mode}' for room {room_id}")
+        else:
+            print("⚠️ No room ID provided, proceeding with TODO reveal")
+        
+        # Get the lines and validate cursor position
+        lines = code.split('\n')
+        if cursor_line >= len(lines):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid cursor line'
+            })
+        
+        todo_line = lines[cursor_line]
+        
+        # Check if the line actually contains a TODO
+        if not todo_reveal_service.is_todo_line(todo_line, language):
+            return jsonify({
+                'success': False,
+                'message': 'Selected line does not contain a TODO comment'
+            })
+        
+        # Generate code for the TODO
+        result = todo_reveal_service.generate_todo_code(
+            todo_line, language, code, problem_context
+        )
+        
+        if not result:
+            return jsonify({
+                'success': False,
+                'message': 'Could not generate code for this TODO comment'
+            })
+        
+        # Add line number info for replacement
+        result['replaceLineRange'] = {
+            'start': cursor_line,
+            'end': cursor_line + 1
+        }
+        
+        print(f"✅ Generated TODO code using LLM")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ Error revealing TODO: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 # Session control endpoints

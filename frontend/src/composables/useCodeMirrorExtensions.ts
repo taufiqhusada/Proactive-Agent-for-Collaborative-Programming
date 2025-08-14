@@ -415,6 +415,20 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
     return false
   }
 
+  // Helper function to detect if a line contains a TODO comment
+  const isTodoLine = (lineText: string, language: string) => {
+    const line = lineText.trim().toLowerCase()
+    
+    const todoPatterns = [
+      '# todo',
+      '// todo',
+      '/* todo',
+      '<!-- todo'
+    ]
+    
+    return todoPatterns.some(pattern => line.includes(pattern))
+  }
+
   // Helper function to extract code block around cursor position
   const extractCodeBlockAtPosition = (view: any, pos: number) => {
     const doc = view.state.doc
@@ -531,7 +545,48 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
       if (pos === null) return false
       
-      // Check if we're inside a function or code block
+      const doc = view.state.doc
+      const clickLine = doc.lineAt(pos)
+      const lineText = clickLine.text
+      
+      // Check if this is a TODO line first
+      if (isTodoLine(lineText, selectedLanguage.value)) {
+        event.preventDefault()
+        
+        // Get the full code for context
+        const fullCode = doc.toString()
+        
+        // Check if TODO is also inside a function for dual functionality
+        const isInsideFunc = isInsideFunction(view, pos)
+        let codeBlock = null
+        
+        if (isInsideFunc) {
+          codeBlock = extractCodeBlockAtPosition(view, pos)
+        }
+        
+        // Prepare TODO data
+        const todoData = {
+          line: lineText,
+          cursorLine: clickLine.number - 1, // Convert to 0-based index
+          code: fullCode,
+          language: selectedLanguage.value,
+          isInsideFunction: isInsideFunc,
+          codeBlock: codeBlock
+        }
+        
+        // Show the TODO reveal popup
+        if ((window as any).showTodoRevealPopup) {
+          (window as any).showTodoRevealPopup(
+            { x: event.clientX, y: event.clientY },
+            todoData
+          )
+        }
+        
+        console.log('🎯 Right-click on TODO line detected, showing reveal popup')
+        return true
+      }
+      
+      // Check if we're inside a function or code block for regular code analysis
       if (isInsideFunction(view, pos)) {
         event.preventDefault()
         
@@ -561,7 +616,48 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
       if (pos === null) return false
       
-      // Check if we're inside a function or code block
+      const doc = view.state.doc
+      const clickLine = doc.lineAt(pos)
+      const lineText = clickLine.text
+      
+      // Check if this is a TODO line first
+      if (isTodoLine(lineText, selectedLanguage.value)) {
+        event.preventDefault()
+        
+        // Get the full code for context
+        const fullCode = doc.toString()
+        
+        // Check if TODO is also inside a function for dual functionality
+        const isInsideFunc = isInsideFunction(view, pos)
+        let codeBlock = null
+        
+        if (isInsideFunc) {
+          codeBlock = extractCodeBlockAtPosition(view, pos)
+        }
+        
+        // Prepare TODO data
+        const todoData = {
+          line: lineText,
+          cursorLine: clickLine.number - 1, // Convert to 0-based index
+          code: fullCode,
+          language: selectedLanguage.value,
+          isInsideFunction: isInsideFunc,
+          codeBlock: codeBlock
+        }
+        
+        // Show the TODO reveal popup
+        if ((window as any).showTodoRevealPopup) {
+          (window as any).showTodoRevealPopup(
+            { x: event.clientX, y: event.clientY },
+            todoData
+          )
+        }
+        
+        console.log('🎯 Ctrl+Click on TODO line detected, showing reveal popup')
+        return true
+      }
+      
+      // Check if we're inside a function or code block for regular code analysis
       if (isInsideFunction(view, pos)) {
         event.preventDefault()
         
