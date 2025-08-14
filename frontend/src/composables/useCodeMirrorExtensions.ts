@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { StateField, StateEffect } from '@codemirror/state'
+import { StateField, StateEffect, EditorState } from '@codemirror/state'
 import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 
 export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, languages: any) {
@@ -326,12 +326,270 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
     }
   })
 
+  // Helper function to get indentation level
+  const getIndentLevel = (lineText: string) => {
+    const match = lineText.match(/^(\s*)/)
+    return match ? match[1].length : 0
+  }
+
+  // Helper function to detect if a line starts a code block
+  const isBlockStart = (lineText: string) => {
+    const trimmed = lineText.trim()
+    if (trimmed === '') return false
+    
+    const patterns = [
+      // Function definitions
+      /^\s*(def|function)\s+\w+.*:/,
+      /^\s*(async\s+)?(def|function)\s+\w+.*:/,
+      // Class definitions
+      /^\s*class\s+\w+.*:/,
+      // Control structures
+      /^\s*(if|elif|else|for|while|try|except|finally|with)\s*.*:/,
+      // Method definitions in classes
+      /^\s*(public|private|protected|static)?\s*(def|function)\s+\w+.*:/,
+      // JavaScript/Java function patterns
+      /^\s*(public|private|protected|static)?\s*\w+\s*=\s*function.*\{/,
+      /^\s*function\s+\w+.*\{/,
+      // Simple assignment that could start a logical block
+      /^\s*\w+\s*=\s*\[/,  // Array assignment
+      /^\s*\w+\s*=\s*\{/,  // Dict/Object assignment
+      // Common algorithmic patterns
+      /^\s*for\s+\w+\s+in\s+range\s*\(/,
+      /^\s*for\s+\w+\s+in\s+\w+/,
+      /^\s*while\s+\w+/,
+      /^\s*if\s+\w+/,
+    ]
+    
+    return patterns.some(pattern => pattern.test(lineText))
+  }
+
+  // Helper function to detect if a position is inside a function or code block
+  const isInsideFunction = (view: any, pos: number) => {
+    const doc = view.state.doc
+    const clickLine = doc.lineAt(pos)
+    
+    // Look for the nearest block start above the current position
+    for (let i = clickLine.number; i > 0 && i > clickLine.number - 50; i--) {
+      const line = doc.line(i)
+      const lineText = line.text
+      
+      // Skip empty lines
+      if (lineText.trim() === '') continue
+      
+      // If we find a block start, check if we're likely inside it
+      if (isBlockStart(lineText)) {
+        const blockIndent = getIndentLevel(lineText)
+        
+        // Check if there's content after the block start with proper indentation
+        for (let j = i + 1; j <= Math.min(doc.lines, i + 20); j++) {
+          const checkLine = doc.line(j)
+          const checkText = checkLine.text
+          
+          // Skip empty lines
+          if (checkText.trim() === '') continue
+          
+          const checkIndent = getIndentLevel(checkText)
+          
+          // If we find indented content, this is likely a real block
+          if (checkIndent > blockIndent) {
+            // Check if the clicked line is within this block's scope
+            if (clickLine.number >= i && clickLine.number <= j + 10) {
+              return true
+            }
+          }
+          
+          // If we hit another block at same or lower indentation, stop
+          if (checkIndent <= blockIndent && isBlockStart(checkText)) {
+            break
+          }
+        }
+      }
+    }
+    
+    // Also check if we're on a line that has some code content (not just empty)
+    const currentText = clickLine.text.trim()
+    if (currentText.length > 3 && !currentText.startsWith('//') && !currentText.startsWith('#')) {
+      return true
+    }
+    
+    return false
+  }
+
+  // Helper function to extract code block around cursor position
+  const extractCodeBlockAtPosition = (view: any, pos: number) => {
+    const doc = view.state.doc
+    const clickLine = doc.lineAt(pos)
+    
+    let startLine = clickLine.number
+    let endLine = clickLine.number
+    let blockIndent = null
+    
+    // Find the start of the logical block by looking backwards
+    for (let i = clickLine.number; i > 0; i--) {
+      const line = doc.line(i)
+      const lineText = line.text
+      
+      // Skip empty lines when looking for block start
+      if (lineText.trim() === '') continue
+      
+      const indent = getIndentLevel(lineText)
+      
+      // If this is a block start and we haven't found one yet
+      if (isBlockStart(lineText) && blockIndent === null) {
+        startLine = i
+        blockIndent = indent
+        break
+      }
+      
+      // If we have a block indent and this line has equal or less indentation
+      // and it's a block start, we found our boundary
+      if (blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
+        startLine = i
+        blockIndent = indent
+      }
+      
+      // If we go too far back or hit a line with very low indentation, stop
+      if (i < clickLine.number - 30 || (indent === 0 && lineText.trim() !== '' && !isBlockStart(lineText))) {
+        break
+      }
+    }
+    
+    // If we didn't find a clear block start, use a reasonable starting point
+    if (blockIndent === null) {
+      // Start from a few lines above or beginning of meaningful code
+      for (let i = Math.max(1, clickLine.number - 10); i <= clickLine.number; i++) {
+        const line = doc.line(i)
+        if (line.text.trim() !== '') {
+          startLine = i
+          blockIndent = getIndentLevel(line.text)
+          break
+        }
+      }
+    }
+    
+    // Find the end of the logical block by looking forwards
+    for (let i = startLine; i <= doc.lines && i < startLine + 50; i++) {
+      const line = doc.line(i)
+      const lineText = line.text
+      const indent = getIndentLevel(lineText)
+      
+      // Skip empty lines - they don't determine block boundaries
+      if (lineText.trim() === '') {
+        endLine = i
+        continue
+      }
+      
+      // If we hit another block at the same or lower indentation level, stop
+      if (i > startLine && blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
+        endLine = i - 1
+        break
+      }
+      
+      // If we hit a line with much lower indentation (like top-level code), stop
+      if (i > startLine && blockIndent !== null && indent < blockIndent && lineText.trim() !== '') {
+        endLine = i - 1
+        break
+      }
+      
+      endLine = i
+    }
+    
+    // Ensure we have a reasonable block size
+    if (endLine - startLine < 1) {
+      endLine = Math.min(doc.lines, startLine + 5)
+    }
+    
+    // Extract the code, including empty lines to preserve structure
+    const codeLines = []
+    for (let i = startLine; i <= endLine; i++) {
+      codeLines.push(doc.line(i).text)
+    }
+    
+    // Clean up trailing empty lines
+    while (codeLines.length > 0 && codeLines[codeLines.length - 1].trim() === '') {
+      codeLines.pop()
+    }
+    
+    console.log(`🔍 Extracted code block from lines ${startLine}-${endLine}:`)
+    console.log(codeLines.join('\n'))
+    
+    return {
+      code: codeLines.join('\n'),
+      startLine: startLine,
+      endLine: endLine,
+      cursorLine: clickLine.number,
+      language: selectedLanguage.value
+    }
+  }
+
+  // Click handler extension for code analysis popup
+  const clickHandlerExtension = EditorView.domEventHandlers({
+    contextmenu(event, view) {
+      // Handle right-click
+      if (isReadOnly.value) return false
+      
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+      if (pos === null) return false
+      
+      // Check if we're inside a function or code block
+      if (isInsideFunction(view, pos)) {
+        event.preventDefault()
+        
+        // Get the code block at this position
+        const codeBlock = extractCodeBlockAtPosition(view, pos)
+        
+        // Show the popup at cursor position
+        if ((window as any).showCodeAnalysisPopup) {
+          (window as any).showCodeAnalysisPopup(
+            { x: event.clientX, y: event.clientY },
+            codeBlock
+          )
+        }
+        
+        console.log('🖱️ Right-click in function detected, showing analysis popup')
+        return true
+      }
+      
+      return false
+    },
+    
+    click(event, view) {
+      // Handle left-click with modifier keys (Ctrl/Cmd + Click)
+      if (!event.ctrlKey && !event.metaKey) return false
+      if (isReadOnly.value) return false
+      
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+      if (pos === null) return false
+      
+      // Check if we're inside a function or code block
+      if (isInsideFunction(view, pos)) {
+        event.preventDefault()
+        
+        // Get the code block at this position
+        const codeBlock = extractCodeBlockAtPosition(view, pos)
+        
+        // Show the popup at cursor position
+        if ((window as any).showCodeAnalysisPopup) {
+          (window as any).showCodeAnalysisPopup(
+            { x: event.clientX, y: event.clientY },
+            codeBlock
+          )
+        }
+        
+        console.log('🖱️ Ctrl+Click in function detected, showing analysis popup')
+        return true
+      }
+      
+      return false
+    }
+  })
+
   // Computed property for extensions that includes readonly state, remote cursors, and code analysis indicators
   const computedExtensions = computed(() => {
     const langExtension = languages[selectedLanguage.value]
-    const baseExtensions = [langExtension, remoteCursorField, codeAnalysisField, selectionUpdateExtension]
+    const baseExtensions = [langExtension, remoteCursorField, codeAnalysisField, selectionUpdateExtension, clickHandlerExtension]
     if (isReadOnly.value) {
-      baseExtensions.push(EditorView.readOnly.of(true))
+      baseExtensions.push(EditorState.readOnly.of(true))
       baseExtensions.push(EditorView.editable.of(false))
     }
     return baseExtensions

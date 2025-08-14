@@ -13,10 +13,6 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
   const userTypingTimer = ref<any>(null)
   const lastTypingTime = ref(0)
   
-  // Enhanced detection state
-  const consecutiveEnters = ref(0)
-  const ENTER_THRESHOLD = 2
-
   const extractCurrentCodeBlock = (editor: any, cursor: any) => {
     const doc = editor.state.doc
     const line = cursor.line
@@ -185,77 +181,12 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
   }
 
   const handleKeyDown = (event: any) => {
+    // This function can be used for other keyboard shortcuts in the future
+    // For now, it's simplified since we removed the double-enter trigger
     if (!view.value) return
     
-    const editor = view.value
-    const cursor = editor.state.selection.main.head
-    const cursorPos = editor.state.doc.lineAt(cursor)
-    
-    if (event.key === 'Enter') {
-      consecutiveEnters.value++
-      console.log('🔄 Enter pressed, consecutive count:', consecutiveEnters.value)
-      
-      // Check for double Enter trigger
-      if (consecutiveEnters.value >= ENTER_THRESHOLD) {
-        console.log('🚀 Double Enter detected - triggering immediate analysis')
-        consecutiveEnters.value = 0
-        triggerImmediateAnalysis(editor, { line: cursorPos.number - 1, ch: cursor - cursorPos.from })
-        return
-      }
-    } else {
-      // Reset consecutive enters on any other key
-      if (consecutiveEnters.value > 0) {
-        console.log('🔄 Non-Enter key pressed, resetting consecutive count')
-        consecutiveEnters.value = 0
-      }
-    }
-  }
-  
-  const triggerImmediateAnalysis = (editor: any, cursor: any) => {
-    console.log('⚡ Immediate analysis triggered')
-    
-    // Simple race condition prevention: Don't send if panel is already visible
-    if (showCodeAnalysis.value) {
-      console.log('⚠️ Analysis panel already visible, skipping duplicate request')
-      return
-    }
-    
-    // Clear any existing timer to prevent duplicate analysis
-    if (userTypingTimer.value) {
-      console.log('🔄 Clearing existing timer to prevent race condition')
-      clearTimeout(userTypingTimer.value)
-      userTypingTimer.value = null
-    }
-    
-    // For immediate triggers (double Enter, outdent), we want to analyze the 
-    // most recently completed code block, not necessarily the current cursor position
-    const adjustedCursor = findPreviousCodeBlock(editor, cursor)
-    
-    // Trigger analysis immediately
-    onUserStoppedTyping(editor, adjustedCursor)
-  }
-  
-  const findPreviousCodeBlock = (editor: any, cursor: any) => {
-    console.log('🔍 Finding previous code block from cursor position:', cursor)
-    
-    const doc = editor.state.doc
-    const currentLine = cursor.line
-    
-    // Look backwards from current position to find the last non-empty line
-    for (let i = currentLine; i >= 0; i--) {
-      const lineText = doc.line(i + 1).text
-      
-      // Skip empty lines and lines with only whitespace
-      if (lineText.trim() === '') continue
-      
-      // Found a non-empty line - this is likely part of the previous code block
-      console.log('🎯 Found previous code at line:', i + 1, 'text:', lineText)
-      return { line: i, ch: lineText.length }
-    }
-    
-    // If no previous code found, use original cursor position
-    console.log('❌ No previous code found, using original cursor position')
-    return cursor
+    // Future keyboard shortcuts can be added here
+    console.log('� Key pressed:', event.key)
   }
   
   const onCursorActivity = (editor: any) => {
@@ -495,7 +426,6 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
     // State
     showCodeAnalysis,
     currentCodeBlock,
-    consecutiveEnters,
     
     // Methods
     handleKeyDown,
@@ -505,6 +435,7 @@ export function useCodeAnalysis(code: any, selectedLanguage: any, currentProblem
     onExplainIssue,
     onCodeAnalysisDismissed,
     onIssuesFound,
+    scheduleCodeAnalysis,
     
     // Debug methods
     testCodeAnalysis,

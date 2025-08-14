@@ -115,6 +115,15 @@
                 <span class="notification-text">{{ scaffoldingNotificationText }}</span>
             </div>
         </div>
+
+        <!-- Code Analysis Popup -->
+        <CodeAnalysisPopup 
+            :visible="showCodeAnalysisPopup"
+            :position="popupPosition"
+            :code-block="popupCodeBlock"
+            @analyze="handlePopupAnalyze"
+            @close="handlePopupClose"
+        />
     </div>
 </template>
 
@@ -136,6 +145,7 @@ import ChatContainer from '@/components/ChatContainer.vue'
 import AIModeToggle from '@/components/AIModeToggle.vue'
 import CodeIssuePanel from '@/components/CodeIssuePanel.vue'
 import CodeRunner from '@/components/CodeRunner.vue'
+import CodeAnalysisPopup from '@/components/CodeAnalysisPopup.vue'
 
 // Import composables
 import { useCodeAnalysis } from '@/composables/useCodeAnalysis'
@@ -154,6 +164,7 @@ export default defineComponent({
         AIModeToggle,
         CodeIssuePanel,
         CodeRunner,
+        CodeAnalysisPopup,
     },
 
     setup() {
@@ -189,6 +200,11 @@ export default defineComponent({
         
         // Component refs
         const chatContainer = ref(null)
+        
+        // Code Analysis Popup State
+        const showCodeAnalysisPopup = ref(false)
+        const popupPosition = ref({ x: 0, y: 0 })
+        const popupCodeBlock = ref(null)
 
         const languages = {
             python: python(),
@@ -444,6 +460,31 @@ export default defineComponent({
             }
         })
 
+        // Code Analysis Popup Handlers
+        const handlePopupAnalyze = (codeBlock) => {
+            console.log('🔍 Popup analyze triggered for code block:', codeBlock)
+            // Close the popup
+            showCodeAnalysisPopup.value = false
+            
+            // Trigger the analysis using the existing code analysis system
+            codeAnalysis.scheduleCodeAnalysis(codeBlock)
+        }
+
+        const handlePopupClose = () => {
+            showCodeAnalysisPopup.value = false
+            popupCodeBlock.value = null
+        }
+
+        // Function to show popup at a specific position (will be called from CodeMirror extension)
+        const showCodeAnalysisPopupAt = (position, codeBlock) => {
+            popupPosition.value = position
+            popupCodeBlock.value = codeBlock
+            showCodeAnalysisPopup.value = true
+        }
+
+        // Make the popup function globally available for CodeMirror extensions
+        window.showCodeAnalysisPopup = showCodeAnalysisPopupAt
+
         return {
             code,
             selectedLanguage,
@@ -493,6 +534,13 @@ export default defineComponent({
             handleReflectionSessionStarted: reflectionSession.handleReflectionSessionStarted,
             handleReflectionSessionEnded: reflectionSession.handleReflectionSessionEnded,
             chatContainer,
+            
+            // Code Analysis Popup
+            showCodeAnalysisPopup,
+            popupPosition,
+            popupCodeBlock,
+            handlePopupAnalyze,
+            handlePopupClose,
         }
     }
 })
