@@ -175,7 +175,7 @@ class AIAgent:
 
         try:
             # Create dynamic system message based on context
-            is_asking_for_syntax = any(keyword in context.messages[-1].content.lower() for keyword in ['syntax', 'example', 'code'])
+            is_asking_for_syntax = any(keyword in context.messages[-1].content.lower() for keyword in ['syntax', 'example', 'code', 'documentation'])
             
             if is_asking_for_syntax:
                 # system_message = "You are Bob, a learning-focused pair programming assistant Provide brief, helpful code examples (1-3 lines) to demonstrate the concept. Show specific syntax patterns when explicitly requested. Avoid complete solutions but give concrete examples."
