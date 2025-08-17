@@ -261,7 +261,7 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = self.client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 # max_tokens=50,
                 # temperature=0.3
