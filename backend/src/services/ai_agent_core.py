@@ -111,7 +111,7 @@ class AIAgent:
         
         # Add special syntax request guidance
         # if is_syntax_request:
-            # ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES!"
+        #     ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES (but not the complete solution)!"
         
         # Adjust prompt based on whether this is a direct mention
         if is_direct_mention:
@@ -137,7 +137,7 @@ class AIAgent:
                             - When they say "I don't know" repeatedly - they need concrete help, NOT more questions
                             - FOLLOW THE GUIDANCE LEVEL: Each message must be more concrete than the previous
                             - Balance learning with being actually helpful - don't leave them completely stuck
-                            - IMPORTANT: Do NOT provide complete solutions - give brief, focused help
+                            - IMPORTANT: When thy asked about syntax, provide concrete code examples (not the complete solution though)
 
                             Provide a helpful response (10-30 words). Be different from your previous messages and more concrete.
 
@@ -174,10 +174,22 @@ class AIAgent:
         print("🔍 AI Decision prompt:", prompt, "...")  # Log first 200 chars for debugging
 
         try:
+            # Create dynamic system message based on context
+            is_asking_for_syntax = any(keyword in context.messages[-1].content.lower() for keyword in ['syntax', 'example', 'code'])
+            
+            if is_asking_for_syntax:
+                # system_message = "You are Bob, a learning-focused pair programming assistant Provide brief, helpful code examples (1-3 lines) to demonstrate the concept. Show specific syntax patterns when explicitly requested. Avoid complete solutions but give concrete examples."
+                system_message = "You are Bob, a learning-focused pair programming assistant. Provide brief conceptual hints as statements. Avoid complete solutions but can show small syntax examples when progression indicates users need concrete help (after giving hints)."
+            else:
+                system_message = "You are Bob, a learning-focused pair programming assistant. NEVER provide code snippets, complete solutions, or full implementations. Do NOT use code blocks or show syntax. Only give brief conceptual hints as statements, not questions."
+            
+            print(system_message)
+            print(prompt)
+
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are Bob, a learning-focused pair programming assistant. NEVER provide code snippets, complete solutions, or full implementations. Do NOT use code blocks or show syntax. Only give brief conceptual hints as statements, not questions."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=90 if is_direct_mention else 60,
@@ -354,16 +366,15 @@ Your response:"""
         # Check if any word is an AI keyword
         return any(word in ai_keywords for word in words)
 
-    def _is_syntax_request(self, message_content: str) -> bool:
-        """Check if message contains syntax request keywords"""
-        content_lower = message_content.lower()
+    # def _is_syntax_request(self, message_content: str) -> bool:
+    #     """Check if message contains syntax request keywords"""
+    #     content_lower = message_content.lower()
         
-        syntax_keywords = [
-            'syntax', 'code', 'show me', 'give me', 'how do i', 'how to',
-            'what is the', 'can you write', 'example', 'sample'
-        ]
+    #     syntax_keywords = [
+    #         'syntax', 'code', 'example',
+    #     ]
         
-        return any(keyword in content_lower for keyword in syntax_keywords)
+    #     return any(keyword in content_lower for keyword in syntax_keywords)
 
     def _build_ai_history_context(self, context: ConversationContext) -> str:
         """Build context about recent AI messages to avoid repetition"""

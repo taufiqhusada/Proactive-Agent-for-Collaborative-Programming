@@ -42,7 +42,7 @@ class AIInterventionService:
         }
         
         # Timing parameters
-        self.response_cooldown = 15  # Minimum seconds between AI responses
+        self.response_cooldown = 20  # Minimum seconds between AI responses
         self.min_messages_before_response = 3  # Wait for at least 3 messages before responding
 
     def _cancel_pending_intervention(self, room_id: str, reason: str):

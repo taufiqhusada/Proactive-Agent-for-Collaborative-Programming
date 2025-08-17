@@ -113,7 +113,7 @@ export default defineComponent({
                     <p><strong>Scenario:</strong> A user has a gift card with a fixed value (e.g., $100) and wants to buy two items from their shopping cart whose prices add up exactly to the gift card value.</p>
                     <p>Implement a Gift Card Purchase Assistant that helps the user make the best use of their gift card.</p>
                     <ul>
-                        <li><strong>Subtask 1:</strong> Given the user wants to buy one item, suggest which other item they should buy (by index) to use the gift card exactly.</li>
+                        <li><strong>Subtask 1:</strong> Given a chosen item index, find another item whose price equals the remaining gift card balance (gift_card_value - chosen_item_price).</li>
                         <li><strong>Subtask 2:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li>
                         <li><strong>Subtask 3:</strong> Find the pair (by indices) that includes the highest possible individual item price among all valid pairs that sum to the gift card value.</li>
                     </ul>
@@ -122,7 +122,7 @@ export default defineComponent({
                     {
                         input: "prices =  [40, 60, 20, 80, 90], gift_card_value = 100, chosen_index = 1",
                         output: "0",
-                        explanation: "If user chooses item at index 1 (price 60), suggest index 0 (price 40) to use the gift card."
+                        explanation: "Item at index 1 costs $60. Remaining balance: $100 - $60 = $40. Find item with price $40, which is at index 0."
                     },
                     {
                         input: "prices = [40, 60, 20, 80, 90], gift_card_value = 100",
@@ -149,8 +149,8 @@ export default defineComponent({
                     <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
                     <ul>
                         <li><strong>Subtask 1 - Daily Average:</strong> Calculate the overall average steps per day across all recorded days.</li>
-                        <li><strong>Subtask 2 - Longest Goal Streak:</strong> Find the longest consecutive streak of days where the user met or exceeded a target daily step goal.</li>
-                        <li><strong>Subtask 3 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
+                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
+                        <li><strong>Subtask 3 - Shortest Target Subarray:</strong> Find the shortest contiguous subarray (consecutive days) where the total number of steps is at least a given target.</li>
                     </ul>
                 `,
                 examples: [
@@ -160,14 +160,14 @@ export default defineComponent({
                         explanation: "Sum of all steps (71000) divided by number of days (7)."
                     },
                     {
-                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], target_daily = 9000",
-                        output: "3",
-                        explanation: "Longest streak where daily steps ≥ 9000: days with [15000, 9000, 11000] gives streak of 3 days."
-                    },
-                    {
                         input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], k = 3",
                         output: "11666.67",
                         explanation: "Best 3-day average is from days with steps [15000, 9000, 11000] gives 11666.67."
+                    },
+                    {
+                        input: "steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000], target = 24000",
+                        output: "2",
+                        explanation: "Shortest subarray with sum ≥ 24000: [15000, 9000] = 24000 with length 2. Other subarrays like [8000, 12000, 10000] = 30000 have length 3, which is longer."
                     }
                 ],
                 constraints: [
@@ -220,7 +220,9 @@ export default defineComponent({
 gift_card_value = 100
 
 def suggest_pair(prices, gift_card_value, chosen_index):
-  # Subtask 1: Find the index of an item that pairs with the chosen item to use the gift card exactly
+  # Subtask 1: Find another item whose price equals the remaining gift card balance
+  # remaining_balance = gift_card_value - prices[chosen_index]
+  # Find and return the index of an item with price equal to remaining_balance
 
   return None
 
@@ -243,28 +245,29 @@ print(find_highest_pair(prices, gift_card_value))
 
         // Boilerplate code for Step Tracker Insight (Python)
         const stepTrackerBoilerplate = `steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000]
-target_daily = 9000
 k = 3
+target = 25000
 
 def daily_average(steps):
   #  Subtask 1: Calculate the overall average steps per day across all recorded days
 
   return 0.0
 
-def longest_goal_streak(steps, target_daily):
-  #  Subtask 2: Find the longest consecutive streak of days where the user met or exceeded a target daily step goal
-
-  return 0
-
 def best_k_day_streak(steps, k):
-  #  Subtask 3: Find the highest average step count within any k consecutive days
+  #  Subtask 2: Find the highest average step count within any k consecutive days
 
   return 0.0
 
+def shortest_target_subarray(steps, target):
+  #  Subtask 3: Find the shortest contiguous subarray where the total steps is at least the target
+  #  Return the length of the shortest subarray, or 0 if no such subarray exists
+
+  return 0
+
 # Example usage:
 print(f"Daily average: {daily_average(steps)}")
-print(f"Longest goal streak for {target_daily} steps: {longest_goal_streak(steps, target_daily)}")
 print(f"Best {k}-day streak average: {best_k_day_streak(steps, k)}")
+print(f"Shortest subarray length for target {target}: {shortest_target_subarray(steps, target)}")
                 `;
 
         // Boilerplate code for Meeting Room Scheduler (Python)

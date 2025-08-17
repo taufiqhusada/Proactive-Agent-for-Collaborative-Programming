@@ -261,10 +261,10 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,
-                temperature=0.3
+                # max_tokens=50,
+                # temperature=0.3
             )
             
             analysis = response.choices[0].message.content.strip()
