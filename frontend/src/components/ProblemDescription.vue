@@ -70,6 +70,10 @@ export default defineComponent({
         selectedProblem: {
             type: Number,
             default: 0
+        },
+        language: {
+            type: String,
+            default: 'python'
         }
     },
     setup(props, { emit }) {
@@ -78,7 +82,6 @@ export default defineComponent({
         const problems = ref([
             {
                 title: "0. First Repeated Number",
-                difficulty: "Easy",
                 description: `
                     <p>Given a list of integers, return the first number that appears more than once.</p>
                     <p>If no number repeats, return <code>None</code>.</p>
@@ -108,7 +111,6 @@ export default defineComponent({
             },
             {
                 title: "1. Gift Card Purchase Assistant",
-                difficulty: "Easy",
                 description: `
                     <p><strong>Scenario:</strong> A user has a gift card with a fixed value (e.g., $100) and wants to buy two items from their shopping cart whose prices add up exactly to the gift card value.</p>
                     <p>Implement a Gift Card Purchase Assistant that helps the user make the best use of their gift card.</p>
@@ -143,7 +145,6 @@ export default defineComponent({
             },
             {
                 title: "2. Step Tracker Insight",
-                difficulty: "Medium",
                 description: `
                     <p><strong>Scenario:</strong> A fitness tracking app that tracks user daily step counts in an array.</p>
                     <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
@@ -179,7 +180,6 @@ export default defineComponent({
             },
             {
                 title: "3. Meeting Room Scheduler",
-                difficulty: "Medium",
                 description: `
                     <p><strong>Scenario:</strong> A meeting room booking system that manages time slots for conference rooms. Each booking is represented as an interval [start_time, end_time].</p>
                     <p>Implement a Meeting Room Analyzer that provides insights on meeting schedules and helps optimize room usage.</p>
@@ -243,6 +243,88 @@ print(find_all_pairs(prices, gift_card_value))
 print(find_highest_pair(prices, gift_card_value))
                 `;
 
+        // Boilerplate code for Gift Card Purchase Assistant (Java)
+        const giftCardBoilerplateJava = `import java.util.*;
+
+public class GiftCardAssistant {
+    public static void main(String[] args) {
+        int[] prices = {40, 60, 20, 80, 90};
+        int giftCardValue = 100;
+        
+        System.out.println(suggestPair(prices, giftCardValue, 1));
+        System.out.println(Arrays.deepToString(findAllPairs(prices, giftCardValue).toArray()));
+        System.out.println(Arrays.toString(findHighestPair(prices, giftCardValue)));
+    }
+    
+    public static Integer suggestPair(int[] prices, int giftCardValue, int chosenIndex) {
+        // Subtask 1: Find another item whose price equals the remaining gift card balance
+        // int remainingBalance = giftCardValue - prices[chosenIndex];
+        // Find and return the index of an item with price equal to remainingBalance
+        
+        return null;
+    }
+    
+    public static List<int[]> findAllPairs(int[] prices, int giftCardValue) {
+        // Subtask 2: Return all pairs of item indices whose prices add up exactly to the gift card value
+        
+        return new ArrayList<>();
+    }
+    
+    public static int[] findHighestPair(int[] prices, int giftCardValue) {
+        // Subtask 3: Find the pair (by indices) that includes the highest individual item price among all valid pairs
+        // Return empty array if no valid pairs exist
+        
+        return new int[0];
+    }
+}
+                `;
+
+        // Boilerplate code for Gift Card Purchase Assistant (C++)
+        const giftCardBoilerplateCpp = `#include <iostream>
+#include <vector>
+using namespace std;
+
+int suggestPair(vector<int>& prices, int giftCardValue, int chosenIndex) {
+    // Subtask 1: Find another item whose price equals the remaining gift card balance
+    // int remainingBalance = giftCardValue - prices[chosenIndex];
+    // Find and return the index of an item with price equal to remainingBalance
+    
+    return -1; // Return -1 if not found
+}
+
+vector<vector<int>> findAllPairs(vector<int>& prices, int giftCardValue) {
+    // Subtask 2: Return all pairs of item indices whose prices add up exactly to the gift card value
+    
+    return {};
+}
+
+vector<int> findHighestPair(vector<int>& prices, int giftCardValue) {
+    // Subtask 3: Find the pair (by indices) that includes the highest individual item price among all valid pairs
+    // Return empty vector if no valid pairs exist
+    
+    return {};
+}
+
+int main() {
+    vector<int> prices = {40, 60, 20, 80, 90};
+    int giftCardValue = 100;
+    
+    cout << suggestPair(prices, giftCardValue, 1) << endl;
+    
+    vector<vector<int>> allPairs = findAllPairs(prices, giftCardValue);
+    cout << "[";
+    for (auto& pair : allPairs) {
+        cout << "[" << pair[0] << "," << pair[1] << "]";
+    }
+    cout << "]" << endl;
+    
+    vector<int> highestPair = findHighestPair(prices, giftCardValue);
+    cout << "[" << highestPair[0] << "," << highestPair[1] << "]" << endl;
+    
+    return 0;
+}
+                `;
+
         // Boilerplate code for Step Tracker Insight (Python)
         const stepTrackerBoilerplate = `steps = [8000, 12000, 10000, 6000, 15000, 9000, 11000]
 k = 3
@@ -270,6 +352,80 @@ print(f"Best {k}-day streak average: {best_k_day_streak(steps, k)}")
 print(f"Shortest subarray length for target {target}: {shortest_target_subarray(steps, target)}")
                 `;
 
+        // Boilerplate code for Step Tracker Insight (Java)
+        const stepTrackerBoilerplateJava = `import java.util.*;
+
+public class StepTrackerInsight {
+    public static void main(String[] args) {
+        int[] steps = {8000, 12000, 10000, 6000, 15000, 9000, 11000};
+        int k = 3;
+        int target = 25000;
+        
+        System.out.printf("Daily average: %.2f%n", dailyAverage(steps));
+        System.out.printf("Best %d-day streak average: %.2f%n", k, bestKDayStreak(steps, k));
+        System.out.printf("Shortest subarray length for target %d: %d%n", target, shortestTargetSubarray(steps, target));
+    }
+    
+    public static double dailyAverage(int[] steps) {
+        // Subtask 1: Calculate the overall average steps per day across all recorded days
+        
+        return 0.0;
+    }
+    
+    public static double bestKDayStreak(int[] steps, int k) {
+        // Subtask 2: Find the highest average step count within any k consecutive days
+        
+        return 0.0;
+    }
+    
+    public static int shortestTargetSubarray(int[] steps, int target) {
+        // Subtask 3: Find the shortest contiguous subarray where the total steps is at least the target
+        // Return the length of the shortest subarray, or 0 if no such subarray exists
+        
+        return 0;
+    }
+}
+                `;
+
+        // Boilerplate code for Step Tracker Insight (C++)
+        const stepTrackerBoilerplateCpp = `#include <iostream>
+#include <vector>
+#include <iomanip>
+using namespace std;
+
+double dailyAverage(vector<int>& steps) {
+    // Subtask 1: Calculate the overall average steps per day across all recorded days
+    
+    return 0.0;
+}
+
+double bestKDayStreak(vector<int>& steps, int k) {
+    // Subtask 2: Find the highest average step count within any k consecutive days
+    
+    return 0.0;
+}
+
+int shortestTargetSubarray(vector<int>& steps, int target) {
+    // Subtask 3: Find the shortest contiguous subarray where the total steps is at least the target
+    // Return the length of the shortest subarray, or 0 if no such subarray exists
+    
+    return 0;
+}
+
+int main() {
+    vector<int> steps = {8000, 12000, 10000, 6000, 15000, 9000, 11000};
+    int k = 3;
+    int target = 25000;
+    
+    cout << fixed << setprecision(2);
+    cout << "Daily average: " << dailyAverage(steps) << endl;
+    cout << "Best " << k << "-day streak average: " << bestKDayStreak(steps, k) << endl;
+    cout << "Shortest subarray length for target " << target << ": " << shortestTargetSubarray(steps, target) << endl;
+    
+    return 0;
+}
+                `;
+
         // Boilerplate code for Meeting Room Scheduler (Python)
         const meetingRoomBoilerplate = `intervals = [[1,4],[6,10],[2,5],[8,12]]
 
@@ -294,6 +450,86 @@ print(f"Conflicting pairs: {detect_conflicts(intervals)}")
 print(f"Merged intervals: {merge_overlapping(intervals)}")
                 `;
 
+        // Boilerplate code for Meeting Room Scheduler (Java)
+        const meetingRoomBoilerplateJava = `import java.util.*;
+
+public class MeetingRoomScheduler {
+    public static void main(String[] args) {
+        int[][] intervals = {{1,4},{6,10},{2,5},{8,12}};
+        
+        System.out.println("Longest meeting: " + Arrays.toString(longestMeeting(intervals)));
+        System.out.println("Conflicting pairs: " + detectConflicts(intervals));
+        System.out.println("Merged intervals: " + Arrays.deepToString(mergeOverlapping(intervals).toArray()));
+    }
+    
+    public static int[] longestMeeting(int[][] intervals) {
+        // Subtask 1: Find the meeting with the longest duration
+        
+        return new int[0];
+    }
+    
+    public static List<int[][]> detectConflicts(int[][] intervals) {
+        // Subtask 2: Identify all pairs of meetings that have overlapping time intervals
+        
+        return new ArrayList<>();
+    }
+    
+    public static List<int[]> mergeOverlapping(int[][] intervals) {
+        // Subtask 3: Merge all overlapping or adjacent meeting intervals into a single interval
+        
+        return new ArrayList<>();
+    }
+}
+                `;
+
+        // Boilerplate code for Meeting Room Scheduler (C++)
+        const meetingRoomBoilerplateCpp = `#include <iostream>
+#include <vector>
+using namespace std;
+
+vector<int> longestMeeting(vector<vector<int>>& intervals) {
+    // Subtask 1: Find the meeting with the longest duration
+    
+    return {};
+}
+
+vector<vector<vector<int>>> detectConflicts(vector<vector<int>>& intervals) {
+    // Subtask 2: Identify all pairs of meetings that have overlapping time intervals
+    
+    return {};
+}
+
+vector<vector<int>> mergeOverlapping(vector<vector<int>>& intervals) {
+    // Subtask 3: Merge all overlapping or adjacent meeting intervals into a single interval
+    
+    return {};
+}
+
+int main() {
+    vector<vector<int>> intervals = {{1,4},{6,10},{2,5},{8,12}};
+    
+    vector<int> longest = longestMeeting(intervals);
+    cout << "Longest meeting: [" << longest[0] << "," << longest[1] << "]" << endl;
+    
+    cout << "Conflicting pairs: ";
+    vector<vector<vector<int>>> conflicts = detectConflicts(intervals);
+    for (auto& conflict : conflicts) {
+        cout << "[[" << conflict[0][0] << "," << conflict[0][1] << "],[" 
+             << conflict[1][0] << "," << conflict[1][1] << "]]";
+    }
+    cout << endl;
+    
+    cout << "Merged intervals: ";
+    vector<vector<int>> merged = mergeOverlapping(intervals);
+    for (auto& interval : merged) {
+        cout << "[" << interval[0] << "," << interval[1] << "]";
+    }
+    cout << endl;
+    
+    return 0;
+}
+                `;
+
         // Boilerplate code for First Repeated Number (Python)
         const firstRepeatedBoilerplate = `nums = [2, 5, 3, 2, 8, 7]
 
@@ -306,12 +542,70 @@ def first_repeated_number(nums):
 print(first_repeated_number(nums))
                 `;
 
-        const problemBoilerplates = [
-            firstRepeatedBoilerplate, // First Repeated Number
-            giftCardBoilerplate, // Gift Card Purchase Assistant
-            stepTrackerBoilerplate, // Step Tracker Insight
-            meetingRoomBoilerplate // Meeting Room Scheduler
-        ];
+        // Boilerplate code for First Repeated Number (Java)
+        const firstRepeatedBoilerplateJava = `import java.util.*;
+
+public class FirstRepeatedNumber {
+    public static void main(String[] args) {
+        int[] nums = {2, 5, 3, 2, 8, 7};
+        
+        System.out.println(firstRepeatedNumber(nums));
+    }
+    
+    public static Integer firstRepeatedNumber(int[] nums) {
+        // Return the first number that appears more than once in the list
+        
+        return null;
+    }
+}
+                `;
+
+        // Boilerplate code for First Repeated Number (C++)
+        const firstRepeatedBoilerplateCpp = `#include <iostream>
+#include <vector>
+using namespace std;
+
+int firstRepeatedNumber(vector<int>& nums) {
+    // Return the first number that appears more than once in the list
+    // Return -1 if no number repeats (since we can't return None in C++)
+    
+    return -1;
+}
+
+int main() {
+    vector<int> nums = {2, 5, 3, 2, 8, 7};
+    
+    int result = firstRepeatedNumber(nums);
+    if (result == -1) {
+        cout << "None" << endl;
+    } else {
+        cout << result << endl;
+    }
+    
+    return 0;
+}
+                `;
+
+        const problemBoilerplates = {
+            python: [
+                firstRepeatedBoilerplate, // First Repeated Number
+                giftCardBoilerplate, // Gift Card Purchase Assistant
+                stepTrackerBoilerplate, // Step Tracker Insight
+                meetingRoomBoilerplate // Meeting Room Scheduler
+            ],
+            java: [
+                firstRepeatedBoilerplateJava, // First Repeated Number
+                giftCardBoilerplateJava, // Gift Card Purchase Assistant
+                stepTrackerBoilerplateJava, // Step Tracker Insight
+                meetingRoomBoilerplateJava // Meeting Room Scheduler
+            ],
+            cpp: [
+                firstRepeatedBoilerplateCpp, // First Repeated Number
+                giftCardBoilerplateCpp, // Gift Card Purchase Assistant
+                stepTrackerBoilerplateCpp, // Step Tracker Insight
+                meetingRoomBoilerplateCpp // Meeting Room Scheduler
+            ]
+        };
 
         const currentProblem = computed(() => problems.value[selectedProblem.value])
 
@@ -330,8 +624,11 @@ print(first_repeated_number(nums))
                     problemIndex: pendingProblemIndex,
                     problem: problems.value[pendingProblemIndex]
                 })
-                if (shouldReset && problemBoilerplates[pendingProblemIndex]) {
-                    emit('boilerplate-changed', problemBoilerplates[pendingProblemIndex])
+                if (shouldReset) {
+                    const languageTemplates = problemBoilerplates[props.language]
+                    if (languageTemplates && languageTemplates[pendingProblemIndex]) {
+                        emit('boilerplate-changed', languageTemplates[pendingProblemIndex])
+                    }
                 }
                 pendingProblemIndex = null
             }

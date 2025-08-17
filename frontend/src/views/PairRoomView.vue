@@ -44,6 +44,7 @@
             <div class="left-panel">
                 <ProblemDescription 
                     :selected-problem="selectedProblem" 
+                    :language="selectedLanguage"
                     @problem-changed="onProblemChanged" 
                     @boilerplate-changed="onBoilerplateChanged" 
                 />
