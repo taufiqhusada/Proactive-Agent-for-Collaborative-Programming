@@ -429,6 +429,30 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
     return todoPatterns.some(pattern => line.includes(pattern))
   }
 
+  // Helper function to detect if a line is a function definition
+  const isFunctionStart = (lineText: string) => {
+    const trimmed = lineText.trim()
+    if (trimmed === '') return false
+    
+    const functionPatterns = [
+      // Python function definitions
+      /^\s*def\s+\w+.*:/,
+      /^\s*async\s+def\s+\w+.*:/,
+      // JavaScript function definitions
+      /^\s*function\s+\w+.*\{/,
+      /^\s*\w+\s*=\s*function.*\{/,
+      /^\s*const\s+\w+\s*=\s*\(.*\)\s*=>/,
+      /^\s*let\s+\w+\s*=\s*\(.*\)\s*=>/,
+      /^\s*var\s+\w+\s*=\s*\(.*\)\s*=>/,
+      /^\s*\w+\s*\(.*\)\s*{/,
+      // Java/C++ method definitions
+      /^\s*(public|private|protected|static)\s+\w+.*\{/,
+      // Other common patterns
+      /^\s*\w+\s*:\s*function.*\{/,
+    ]
+    return functionPatterns.some(pattern => pattern.test(lineText))
+  }
+
   // Helper function to extract code block around cursor position
   const extractCodeBlockAtPosition = (view: any, pos: number) => {
     const doc = view.state.doc
@@ -437,75 +461,142 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
     let startLine = clickLine.number
     let endLine = clickLine.number
     let blockIndent = null
+    let foundFunction = false
     
-    // Find the start of the logical block by looking backwards
-    for (let i = clickLine.number; i > 0; i--) {
+    // First priority: Look for the containing function if we're inside one
+    for (let i = clickLine.number; i > 0 && i > clickLine.number - 100; i--) {
       const line = doc.line(i)
       const lineText = line.text
-      
-      // Skip empty lines when looking for block start
-      if (lineText.trim() === '') continue
-      
       const indent = getIndentLevel(lineText)
       
-      // If this is a block start and we haven't found one yet
-      if (isBlockStart(lineText) && blockIndent === null) {
+      // Skip empty lines when looking for function start
+      if (lineText.trim() === '') continue
+      
+      // If this is a function definition, this is what we want to extract
+      if (isFunctionStart(lineText)) {
         startLine = i
         blockIndent = indent
+        foundFunction = true
+        console.log('🎯 Found function definition at line:', i, 'text:', lineText.trim())
         break
       }
       
-      // If we have a block indent and this line has equal or less indentation
-      // and it's a block start, we found our boundary
-      if (blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
-        startLine = i
-        blockIndent = indent
+      // Stop if we hit another function or class at same/lower indentation
+      if (blockIndent !== null && indent <= blockIndent && (isFunctionStart(lineText) || isBlockStart(lineText))) {
+        break
       }
       
-      // If we go too far back or hit a line with very low indentation, stop
-      if (i < clickLine.number - 30 || (indent === 0 && lineText.trim() !== '' && !isBlockStart(lineText))) {
+      // If we go too far back, stop
+      if (i < clickLine.number - 50 || (indent === 0 && lineText.trim() !== '' && !isBlockStart(lineText))) {
         break
       }
     }
     
-    // If we didn't find a clear block start, use a reasonable starting point
-    if (blockIndent === null) {
-      // Start from a few lines above or beginning of meaningful code
-      for (let i = Math.max(1, clickLine.number - 10); i <= clickLine.number; i++) {
+    // If we found a function, find its complete end
+    if (foundFunction) {
+      console.log('📏 Extracting entire function starting from line:', startLine)
+      
+      // Find the end of the function by looking for the end of its indentation block
+      for (let i = startLine + 1; i <= doc.lines && i < startLine + 200; i++) {
         const line = doc.line(i)
-        if (line.text.trim() !== '') {
+        const lineText = line.text
+        const indent = getIndentLevel(lineText)
+        
+        // Skip empty lines - they don't determine block boundaries
+        if (lineText.trim() === '') {
+          endLine = i
+          continue
+        }
+        
+        // If we hit another function or top-level construct at the same or lower indentation, stop
+        if (blockIndent !== null && indent <= blockIndent && (isFunctionStart(lineText) || isBlockStart(lineText))) {
+          endLine = i - 1
+          console.log('🏁 Function ends at line:', endLine, 'due to new block at same/lower indent')
+          break
+        }
+        
+        // If we hit a line with much lower indentation (like top-level code), stop
+        if (blockIndent !== null && indent < blockIndent && lineText.trim() !== '') {
+          endLine = i - 1
+          console.log('🏁 Function ends at line:', endLine, 'due to dedent')
+          break
+        }
+        
+        endLine = i
+      }
+    } else {
+      // Fallback: extract logical block if no function found
+      console.log('📦 No function found, extracting logical block')
+      
+      // Find the start of the logical block by looking backwards
+      for (let i = clickLine.number; i > 0; i--) {
+        const line = doc.line(i)
+        const lineText = line.text
+        
+        // Skip empty lines when looking for block start
+        if (lineText.trim() === '') continue
+        
+        const indent = getIndentLevel(lineText)
+        
+        // If this is a block start and we haven't found one yet
+        if (isBlockStart(lineText) && blockIndent === null) {
           startLine = i
-          blockIndent = getIndentLevel(line.text)
+          blockIndent = indent
+          break
+        }
+        
+        // If we have a block indent and this line has equal or less indentation
+        // and it's a block start, we found our boundary
+        if (blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
+          startLine = i
+          blockIndent = indent
+        }
+        
+        // If we go too far back or hit a line with very low indentation, stop
+        if (i < clickLine.number - 30 || (indent === 0 && lineText.trim() !== '' && !isBlockStart(lineText))) {
           break
         }
       }
-    }
-    
-    // Find the end of the logical block by looking forwards
-    for (let i = startLine; i <= doc.lines && i < startLine + 50; i++) {
-      const line = doc.line(i)
-      const lineText = line.text
-      const indent = getIndentLevel(lineText)
       
-      // Skip empty lines - they don't determine block boundaries
-      if (lineText.trim() === '') {
+      // If we didn't find a clear block start, use a reasonable starting point
+      if (blockIndent === null) {
+        // Start from a few lines above or beginning of meaningful code
+        for (let i = Math.max(1, clickLine.number - 10); i <= clickLine.number; i++) {
+          const line = doc.line(i)
+          if (line.text.trim() !== '') {
+            startLine = i
+            blockIndent = getIndentLevel(line.text)
+            break
+          }
+        }
+      }
+      
+      // Find the end of the logical block by looking forwards
+      for (let i = startLine; i <= doc.lines && i < startLine + 50; i++) {
+        const line = doc.line(i)
+        const lineText = line.text
+        const indent = getIndentLevel(lineText)
+        
+        // Skip empty lines - they don't determine block boundaries
+        if (lineText.trim() === '') {
+          endLine = i
+          continue
+        }
+        
+        // If we hit another block at the same or lower indentation level, stop
+        if (i > startLine && blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
+          endLine = i - 1
+          break
+        }
+        
+        // If we hit a line with much lower indentation (like top-level code), stop
+        if (i > startLine && blockIndent !== null && indent < blockIndent && lineText.trim() !== '') {
+          endLine = i - 1
+          break
+        }
+        
         endLine = i
-        continue
       }
-      
-      // If we hit another block at the same or lower indentation level, stop
-      if (i > startLine && blockIndent !== null && indent <= blockIndent && isBlockStart(lineText)) {
-        endLine = i - 1
-        break
-      }
-      
-      // If we hit a line with much lower indentation (like top-level code), stop
-      if (i > startLine && blockIndent !== null && indent < blockIndent && lineText.trim() !== '') {
-        endLine = i - 1
-        break
-      }
-      
-      endLine = i
     }
     
     // Ensure we have a reasonable block size
@@ -524,7 +615,8 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       codeLines.pop()
     }
     
-    console.log(`🔍 Extracted code block from lines ${startLine}-${endLine}:`)
+    const extractedType = foundFunction ? 'function' : 'code block'
+    console.log(`🔍 Extracted ${extractedType} from lines ${startLine}-${endLine}:`)
     console.log(codeLines.join('\n'))
     
     return {
@@ -532,7 +624,8 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       startLine: startLine,
       endLine: endLine,
       cursorLine: clickLine.number,
-      language: selectedLanguage.value
+      language: selectedLanguage.value,
+      type: extractedType
     }
   }
 
