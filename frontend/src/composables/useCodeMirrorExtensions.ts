@@ -447,6 +447,13 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       /^\s*\w+\s*\(.*\)\s*{/,
       // Java/C++ method definitions
       /^\s*(public|private|protected|static)\s+\w+.*\{/,
+      // C++ function definitions (return_type function_name(...) {)
+      /^\s*\w+\s+\w+\s*\(.*\)\s*\{/,                    // int main() {, void func() {
+      /^\s*\w+\s+\w+\s*\(.*\)\s*const\s*\{/,            // string getName() const {
+      /^\s*template\s*<[^>]*>\s*\w+\s+\w+\s*\(.*\)\s*\{/,  // template<typename T> T func() {
+      // C++ constructors and destructors
+      /^\s*\w+\s*\(.*\)\s*\{/,                          // Constructor() {
+      /^\s*~\w+\s*\(.*\)\s*\{/,                         // ~Destructor() {
       // Other common patterns
       /^\s*\w+\s*:\s*function.*\{/,
     ]
@@ -492,37 +499,78 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       }
     }
     
-    // If we found a function, find its complete end
+    // If we found a function, find its complete end (but only THIS function)
     if (foundFunction) {
       console.log('📏 Extracting entire function starting from line:', startLine)
       
-      // Find the end of the function by looking for the end of its indentation block
-      for (let i = startLine + 1; i <= doc.lines && i < startLine + 200; i++) {
+      // Find the end of THIS specific function by looking for its closing brace
+      let braceCount = 0
+      let foundOpeningBrace = false
+      
+      for (let i = startLine; i <= doc.lines && i < startLine + 200; i++) {
         const line = doc.line(i)
         const lineText = line.text
-        const indent = getIndentLevel(lineText)
         
-        // Skip empty lines - they don't determine block boundaries
-        if (lineText.trim() === '') {
+        // Count braces to find the end of this specific function
+        for (let char of lineText) {
+          if (char === '{') {
+            braceCount++
+            foundOpeningBrace = true
+          } else if (char === '}') {
+            braceCount--
+            if (foundOpeningBrace && braceCount === 0) {
+              // Found the closing brace of this function
+              endLine = i
+              console.log('🏁 Function ends at line:', endLine, 'due to closing brace')
+              return {
+                code: extractCodeFromLines(doc, startLine, endLine),
+                startLine: startLine,
+                endLine: endLine,
+                cursorLine: clickLine.number,
+                language: selectedLanguage.value,
+                type: 'function'
+              }
+            }
+          }
+        }
+        
+        // Safety check: if we hit another function at the same indentation level, stop
+        if (i > startLine && getIndentLevel(lineText) === blockIndent && isFunctionStart(lineText)) {
+          endLine = i - 1
+          console.log('🏁 Function ends at line:', endLine, 'due to next function')
+          break
+        }
+      }
+      
+      // If we didn't find closing brace, use indentation-based detection
+      if (!foundOpeningBrace || braceCount > 0) {
+        for (let i = startLine + 1; i <= doc.lines && i < startLine + 200; i++) {
+          const line = doc.line(i)
+          const lineText = line.text
+          const indent = getIndentLevel(lineText)
+          
+          // Skip empty lines - they don't determine block boundaries
+          if (lineText.trim() === '') {
+            endLine = i
+            continue
+          }
+          
+          // If we hit another function at the same indentation level, stop
+          if (indent === blockIndent && isFunctionStart(lineText)) {
+            endLine = i - 1
+            console.log('🏁 Function ends at line:', endLine, 'due to new function at same indent')
+            break
+          }
+          
+          // If we hit a line with much lower indentation (like top-level code), stop
+          if (indent < blockIndent && lineText.trim() !== '') {
+            endLine = i - 1
+            console.log('🏁 Function ends at line:', endLine, 'due to dedent')
+            break
+          }
+          
           endLine = i
-          continue
         }
-        
-        // If we hit another function or top-level construct at the same or lower indentation, stop
-        if (blockIndent !== null && indent <= blockIndent && (isFunctionStart(lineText) || isBlockStart(lineText))) {
-          endLine = i - 1
-          console.log('🏁 Function ends at line:', endLine, 'due to new block at same/lower indent')
-          break
-        }
-        
-        // If we hit a line with much lower indentation (like top-level code), stop
-        if (blockIndent !== null && indent < blockIndent && lineText.trim() !== '') {
-          endLine = i - 1
-          console.log('🏁 Function ends at line:', endLine, 'due to dedent')
-          break
-        }
-        
-        endLine = i
       }
     } else {
       // Fallback: extract logical block if no function found
@@ -604,7 +652,18 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       endLine = Math.min(doc.lines, startLine + 5)
     }
     
-    // Extract the code, including empty lines to preserve structure
+    return {
+      code: extractCodeFromLines(doc, startLine, endLine),
+      startLine: startLine,
+      endLine: endLine,
+      cursorLine: clickLine.number,
+      language: selectedLanguage.value,
+      type: foundFunction ? 'function' : 'code block'
+    }
+  }
+  
+  // Helper function to extract code from lines range
+  const extractCodeFromLines = (doc: any, startLine: number, endLine: number) => {
     const codeLines = []
     for (let i = startLine; i <= endLine; i++) {
       codeLines.push(doc.line(i).text)
@@ -615,18 +674,11 @@ export function useCodeMirrorExtensions(selectedLanguage: any, isReadOnly: any, 
       codeLines.pop()
     }
     
-    const extractedType = foundFunction ? 'function' : 'code block'
-    console.log(`🔍 Extracted ${extractedType} from lines ${startLine}-${endLine}:`)
-    console.log(codeLines.join('\n'))
+    const extractedCode = codeLines.join('\n')
+    console.log(`🔍 Extracted code from lines ${startLine}-${endLine}:`)
+    console.log(extractedCode)
     
-    return {
-      code: codeLines.join('\n'),
-      startLine: startLine,
-      endLine: endLine,
-      cursorLine: clickLine.number,
-      language: selectedLanguage.value,
-      type: extractedType
-    }
+    return extractedCode
   }
 
   // Click handler extension for code analysis popup
