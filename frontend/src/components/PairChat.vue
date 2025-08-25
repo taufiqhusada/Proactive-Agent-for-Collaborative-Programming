@@ -303,6 +303,8 @@ export default defineComponent({
         // PCM Audio Context for real-time streaming
         let audioContext = null
         let currentAudioSource = null
+        let activePCMAudioSources = new Set() // Track all active PCM audio sources
+        let activeMP3AudioElements = new Set() // Track all active MP3 audio elements
         let pcmSampleRate = 24000 // OpenAI's PCM format is 24kHz, not 16kHz
         let pcmChannels = 1 // Mono audio
         let pcmBitsPerSample = 16 // 16-bit PCM
@@ -348,9 +350,16 @@ export default defineComponent({
                 return 'Team Chat (No AI)'
             } else if (props.individualMode) {
                 return 'Personal AI Chat'
+            } else if (aiModeService.isSharedNoVoiceMode()) {
+                return 'Team Chat (No Voice)'
             } else {
                 return 'Team Chat'
             }
+        }
+
+        // Helper function to check if AI voice should be disabled
+        const isAIVoiceDisabled = () => {
+            return aiModeService.isIndividualMode() || aiModeService.isSharedNoVoiceMode()
         }
 
         // Chat typing detection functions
@@ -532,8 +541,8 @@ export default defineComponent({
         }
 
         const handleAISpeech = (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
                 return
             }
             
@@ -548,9 +557,9 @@ export default defineComponent({
         const activeAudioStreams = ref(new Set()) // Set of messageIds being streamed
 
         const handleAudioStreamStart = (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
-                console.log('🔇 Personal AI Mode: Voice output disabled - skipping audio stream')
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
+                console.log('🔇 AI Voice Disabled Mode: Voice output disabled - skipping audio stream')
                 return
             }
             
@@ -558,6 +567,14 @@ export default defineComponent({
             
             const { messageId } = data
             console.log(`🎵 Starting audio stream for message ${messageId}`)
+            
+            // Ensure audio context is ready for playback
+            if (audioContext && audioContext.state === 'suspended') {
+                console.log('🔊 Resuming audio context for new AI audio stream')
+                audioContext.resume().catch(error => {
+                    console.error('Error resuming audio context for stream:', error)
+                })
+            }
             
             // CRITICAL: Stop all voice recording immediately to prevent feedback
             const wasAutoRecordingActive = autoRecordingEnabled.value
@@ -595,8 +612,8 @@ export default defineComponent({
         }
 
         const handleAudioChunk = async (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
                 return
             }
             
@@ -662,8 +679,8 @@ export default defineComponent({
         }
 
         const handleAudioStreamComplete = async (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
                 return
             }
             
@@ -694,6 +711,12 @@ export default defineComponent({
             
             streamData.playingStarted = true
             
+            // Ensure audio context is ready for MP3 playback (in case it was suspended)
+            if (audioContext && audioContext.state === 'suspended') {
+                console.log('🔊 Resuming audio context for MP3 streaming playback')
+                await audioContext.resume()
+            }
+            
             try {
                 // Sort chunks by number to ensure correct order
                 const sortedChunks = streamData.chunks.sort((a, b) => a.number - b.number)
@@ -717,6 +740,9 @@ export default defineComponent({
                 const audioUrl = URL.createObjectURL(audioBlob)
                 const audio = new Audio(audioUrl)
                 
+                // Track this audio element for stopping later
+                activeMP3AudioElements.add(audio)
+                
                 audio.volume = 0.8
                 
                 audio.onloadstart = () => {
@@ -729,12 +755,14 @@ export default defineComponent({
                 
                 audio.onended = () => {
                     console.log(`🏁 Finished playing streamed MP3 audio for message ${messageId}`)
+                    activeMP3AudioElements.delete(audio) // Remove from tracking
                     URL.revokeObjectURL(audioUrl)
                     cleanupAudioStream(messageId)
                 }
                 
                 audio.onerror = (error) => {
                     console.error('Streaming MP3 audio playback error:', error)
+                    activeMP3AudioElements.delete(audio) // Remove from tracking
                     URL.revokeObjectURL(audioUrl)
                     cleanupAudioStream(messageId)
                 }
@@ -823,8 +851,8 @@ export default defineComponent({
         }
 
         const handleAudioStreamDone = (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
                 return
             }
             
@@ -845,8 +873,8 @@ export default defineComponent({
         }
 
         const handleAudioError = (data) => {
-            // In Personal AI mode, disable voice output completely
-            if (aiModeService.isIndividualMode()) {
+            // In Personal AI mode and Shared No Voice mode, disable voice output completely
+            if (isAIVoiceDisabled()) {
                 return
             }
             
@@ -1441,6 +1469,12 @@ export default defineComponent({
                 // Stop any current speech
                 stopSpeaking()
                 
+                // Ensure audio context is ready for playback (in case it was suspended)
+                if (audioContext && audioContext.state === 'suspended') {
+                    console.log('🔊 Resuming audio context for legacy audio playback')
+                    await audioContext.resume()
+                }
+                
                 // CRITICAL: Pause voice recording while AI is speaking to prevent feedback loop
                 const wasAutoRecordingActive = autoRecordingEnabled.value
                 if (wasAutoRecordingActive) {
@@ -1469,6 +1503,9 @@ export default defineComponent({
                 const audio = new Audio(audioUrl)
                 audio.volume = 0.8
                 
+                // Track this audio element for stopping later
+                activeMP3AudioElements.add(audio)
+                
                 audio.onloadstart = () => {
                     isSpeaking.value = true
                     console.log('🔊 Started playing AI speech (voice recording paused)')
@@ -1477,6 +1514,7 @@ export default defineComponent({
                 audio.onended = () => {
                     isSpeaking.value = false
                     currentUtterance = null
+                    activeMP3AudioElements.delete(audio) // Remove from tracking
                     URL.revokeObjectURL(audioUrl)
                     console.log('✅ Finished playing AI speech (legacy)')
                     
@@ -1503,6 +1541,7 @@ export default defineComponent({
                     console.error('Audio playback error:', error)
                     isSpeaking.value = false
                     currentUtterance = null
+                    activeMP3AudioElements.delete(audio) // Remove from tracking
                     URL.revokeObjectURL(audioUrl)
                     
                     // Notify backend even if audio failed
@@ -1556,39 +1595,86 @@ export default defineComponent({
         }
 
         const stopSpeaking = () => {
+            // Stop browser speech synthesis (human voice fallback)
             if (speechSynthesis.speaking) {
                 speechSynthesis.cancel()
             }
             
-            // Stop PCM audio if playing
+            // Stop legacy HTML5 audio (if any)
+            if (currentUtterance && currentUtterance.pause) {
+                currentUtterance.pause()
+                currentUtterance.currentTime = 0
+            }
+            
+            // Stop PCM audio context and reset timing
             stopPCMAudio()
             
+            // Stop all active AI audio streams (the main modern AI voice system)
+            if (activeAudioStreams.value.size > 0) {
+                console.log(`🔇 Stopping ${activeAudioStreams.value.size} active AI audio streams`)
+                
+                // Clean up all active streaming audio
+                for (const messageId of activeAudioStreams.value) {
+                    cleanupAudioStream(messageId)
+                }
+                
+                // Force clear all streaming state
+                activeAudioStreams.value.clear()
+                streamingAudioChunks.value.clear()
+                
+                console.log('🔇 All AI audio streams stopped and cleared')
+            }
+            
+            // Reset all speaking-related states
             isSpeaking.value = false
             currentUtterance = null
+            
+            console.log('🔇 All audio stopped - AI voice muted')
         }
 
         const toggleAIVoice = () => {
             aiVoiceEnabled.value = !aiVoiceEnabled.value
             if (!aiVoiceEnabled.value) {
+                // Disabling AI voice - stop all current audio
                 stopSpeaking()
+                console.log('AI voice disabled')
+            } else {
+                // Enabling AI voice - prepare audio system for playback
+                console.log('AI voice enabled - preparing audio system')
+                
+                // Resume audio context if it was suspended
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume().then(() => {
+                        console.log('🔊 Audio context resumed after AI voice re-enabled')
+                    }).catch(error => {
+                        console.error('Error resuming audio context:', error)
+                    })
+                }
             }
             console.log('AI voice', aiVoiceEnabled.value ? 'enabled' : 'disabled')
         }        // PCM audio functions
         const initializePCMAudio = async () => {
             try {
-                // Initialize Web Audio API context
+                // Initialize Web Audio API context if not exists
                 const AudioContext = window.AudioContext || window.webkitAudioContext
                 if (!AudioContext) {
                     console.warn('Web Audio API not supported - falling back to MP3 buffering')
                     return false
                 }
 
-                audioContext = new AudioContext()
+                if (!audioContext) {
+                    audioContext = new AudioContext()
+                }
                 
-                // Resume audio context if suspended (browser policy)
+                // Resume audio context if suspended (browser policy or manually suspended)
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume()
+                    console.log('🔊 Audio context resumed for PCM playback')
                 }
+                
+                // Clear any leftover tracking from previous sessions
+                activePCMAudioSources.clear()
+                activeMP3AudioElements.clear()
                 
                 console.log(`✅ PCM Audio Context initialized for real-time streaming (24kHz OpenAI PCM format)`)
                 console.log(`🎵 Audio Context State: ${audioContext.state}`)
@@ -1638,6 +1724,9 @@ export default defineComponent({
                 source.buffer = audioBuffer
                 source.connect(audioContext.destination)
                 
+                // Track this audio source for stopping later
+                activePCMAudioSources.add(source)
+                
                 // For immediate real-time playback, schedule based on current context time
                 const currentTime = audioContext.currentTime
                 const chunkDuration = samples.length / pcmSampleRate
@@ -1663,6 +1752,9 @@ export default defineComponent({
                 // Handle end of chunk
                 source.onended = () => {
                     console.log(`✅ PCM chunk ${chunkNumber} playback completed`)
+                    
+                    // Remove this source from active tracking
+                    activePCMAudioSources.delete(source)
                     
                     // Mark this chunk as completed for tracking
                     const streamData = streamingAudioChunks.value.get(messageId)
@@ -1696,16 +1788,53 @@ export default defineComponent({
             // Reset audio playback timing
             audioPlaybackTime = 0
             
+            // Stop all active PCM audio sources
+            for (const source of activePCMAudioSources) {
+                try {
+                    source.stop(0) // Stop immediately
+                    source.disconnect()
+                } catch (error) {
+                    console.error('Error stopping PCM audio source:', error)
+                }
+            }
+            activePCMAudioSources.clear()
+            
+            // Stop legacy current audio source (if any)
             if (currentAudioSource) {
                 try {
-                    currentAudioSource.stop()
+                    currentAudioSource.stop(0)
+                    currentAudioSource.disconnect()
                     currentAudioSource = null
                 } catch (error) {
-                    console.error('Error stopping PCM audio:', error)
+                    console.error('Error stopping current PCM audio:', error)
                 }
             }
             
-            console.log('🔇 PCM audio playback stopped and timing reset')
+            // Stop all active MP3 audio elements
+            for (const audio of activeMP3AudioElements) {
+                try {
+                    audio.pause()
+                    audio.currentTime = 0
+                    if (audio.src && audio.src.startsWith('blob:')) {
+                        URL.revokeObjectURL(audio.src)
+                    }
+                } catch (error) {
+                    console.error('Error stopping MP3 audio element:', error)
+                }
+            }
+            activeMP3AudioElements.clear()
+            
+            // Suspend audio context to completely stop all scheduled audio
+            if (audioContext && audioContext.state !== 'closed') {
+                try {
+                    audioContext.suspend()
+                    console.log('🔇 Audio context suspended')
+                } catch (error) {
+                    console.error('Error suspending audio context:', error)
+                }
+            }
+            
+            console.log('🔇 All PCM and MP3 audio playback stopped and timing reset')
         }
 
         onMounted(() => {

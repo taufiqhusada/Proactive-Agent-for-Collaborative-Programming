@@ -38,6 +38,7 @@ class AIAgent:
         
         self.socketio = socketio_instance
         self.conversation_history = {}  # room_id -> ConversationContext
+        self.room_ai_modes = {}  # room_id -> ai_mode (shared, shared_no_voice, individual, none)
         
         # AI Agent identity
         self.agent_name = "Bob (AI Assistant)"
@@ -439,15 +440,44 @@ Your response:"""
             context.last_execution_success):
             return True
         
-        # 2. New code added recently
+        # 2. User demonstrates understanding by explaining approach
         recent_messages = context.messages[-3:] if len(context.messages) >= 3 else context.messages
         for msg in recent_messages:
-            # Look for keywords indicating progress
+            # Skip AI messages
+            if msg.userId == 'ai_agent_bob':
+                continue
+                
+            msg_lower = msg.content.lower()
+            
+            # Look for solution explanation patterns
+            understanding_patterns = [
+                # Direct approach explanations
+                "i'm thinking about using", "we can use", "let's use", "i'll use",
+                "we can do", "i can do", "let's do", "we should",
+                "basically like", "so we", "then we", "first we",
+                
+                # Algorithm step descriptions  
+                "iterate", "loop", "check if", "add to", "put in",
+                "return", "create", "initialize", "make a",
+                
+                # Confirmation of understanding
+                "got it", "i see", "makes sense", "understood", "i get it",
+                "yeah so", "okay so", "right so", "oh i see"
+            ]
+            
+            # Check if user is explaining their approach
+            if any(pattern in msg_lower for pattern in understanding_patterns):
+                print(f"🧠 DETECTED USER UNDERSTANDING: '{msg.content[:60]}...' - will reset AI history")
+                return True
+        
+        # 3. Traditional progress indicators
+        for msg in recent_messages:
+            # Look for keywords indicating successful progress
             progress_keywords = ['works', 'working', 'fixed', 'got it', 'solved', 'success', 'good', 'nice']
             if any(keyword in msg.content.lower() for keyword in progress_keywords):
                 return True
         
-        # 3. No AI intervention needed for a while (users working independently)
+        # 4. No AI intervention needed for a while (users working independently)
         if (context.last_ai_response and 
             datetime.now() - context.last_ai_response > timedelta(minutes=5)):
             return True
@@ -703,10 +733,13 @@ Your response:"""
         
         print(f"📊 Progress check message added to context in room {room_id} (no timestamp updates)")
 
-    def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False, is_progress_check: bool = False):
-        """Send an AI message to the chat room"""        
+    def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False, is_progress_check: bool = False, ai_mode: str = None):
+        """Send an AI message to the chat room"""
+        # Use provided ai_mode or look up the stored mode for the room
+        effective_ai_mode = ai_mode if ai_mode is not None else self.get_room_ai_mode(room_id)
+        
         message = self.audio_service.send_ai_message(
-            room_id, content, is_reflection, False, self.conversation_history, is_progress_check
+            room_id, content, is_reflection, False, self.conversation_history, is_progress_check, effective_ai_mode
         )
         
         # Always add AI message to conversation context, even if audio service returns None
@@ -790,6 +823,15 @@ Your response:"""
             print(f"🔓 Audio playback complete for room {room_id} (message: {message_id})")
         else:
             print(f"⚠️ AI RESPONSE LOCK: No context found for room {room_id}")
+
+    def set_room_ai_mode(self, room_id: str, ai_mode: str):
+        """Set the AI mode for a specific room"""
+        self.room_ai_modes[room_id] = ai_mode
+        print(f"🔄 AI mode set to '{ai_mode}' for room {room_id}")
+
+    def get_room_ai_mode(self, room_id: str) -> str:
+        """Get the AI mode for a specific room"""
+        return self.room_ai_modes.get(room_id, 'shared')
 
     def join_room(self, room_id: str):
         """AI agent joins a room (but doesn't send greeting until session starts)"""

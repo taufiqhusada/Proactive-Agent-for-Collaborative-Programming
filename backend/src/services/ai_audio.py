@@ -355,11 +355,18 @@ class AIAudioService:
         return message
 
     def send_ai_message(self, room_id: str, content: str, is_reflection: bool = False, 
-                       is_execution_help: bool = False, conversation_history=None, is_progress_check: bool = False):
+                       is_execution_help: bool = False, conversation_history=None, is_progress_check: bool = False, ai_mode: str = 'shared'):
         """Send an AI message to the chat room (sync version)"""
         try:
-            return self.send_ai_message_with_audio(
-                room_id, content, is_reflection, is_execution_help, conversation_history, is_progress_check)
+            # For shared_no_voice mode, send text-only message (no audio generation)
+            if ai_mode == 'shared_no_voice':
+                print(f"🤖 Shared No Voice mode detected - sending text-only message to room {room_id}")
+                return self.send_ai_message_text_only(
+                    room_id, content, is_reflection, is_execution_help, conversation_history, is_progress_check)
+            else:
+                # For other modes (shared, individual), generate audio
+                return self.send_ai_message_with_audio(
+                    room_id, content, is_reflection, is_execution_help, conversation_history, is_progress_check)
         except Exception as e:
             # Fallback to simple text-only message
             print(f"Error sending AI message with audio, falling back to text: {e}")

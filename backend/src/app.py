@@ -180,6 +180,9 @@ def ws_join(data):
     # AI agent joins the room when first user joins
     if current_user_count == 1:
         ai_agent.join_room(room)
+        # Set initial AI mode for the room
+        initial_ai_mode = manager.get_ai_mode(room)
+        ai_agent.set_room_ai_mode(room, initial_ai_mode)
     
     # Notify ALL users (including self) about the updated user count
     emit("user_count_update", {
@@ -290,6 +293,9 @@ def ws_chat_message(data):
         # Copy context from original room to personal room if needed
         individual_ai_service.copy_room_context_to_personal(room, user_id)
         
+        # Set AI mode for personal room (individual mode generates audio)
+        ai_agent.set_room_ai_mode(personal_room, 'individual')
+        
         # Process message with AI agent in personal room in a separate thread
         def process_individual_ai_message():
             print(f"🤖 Processing individual AI message for personal room {personal_room}")
@@ -305,6 +311,9 @@ def ws_chat_message(data):
         
         # Check AI mode before processing with AI agent
         current_ai_mode = manager.get_ai_mode(room)
+        
+        # Update AI agent with current mode
+        ai_agent.set_room_ai_mode(room, current_ai_mode)
         
         # Only process with AI if not in 'none' mode
         if current_ai_mode != 'none':
@@ -328,6 +337,9 @@ def ws_ai_mode_changed(data):
     
     # Set the AI mode (always allowed now)
     manager.set_ai_mode(room, data["mode"])
+    
+    # Update AI agent with the new mode
+    ai_agent.set_room_ai_mode(room, data["mode"])
     
     # Broadcast the mode change to all users in the room (including sender for confirmation)
     emit("ai_mode_changed", {

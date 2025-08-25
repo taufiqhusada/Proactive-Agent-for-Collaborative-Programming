@@ -8,6 +8,7 @@
         :class="['mode-select', { 'disabled': sessionStarted }]"
       >
         <option value="shared">🤝 Shared AI</option>
+        <option value="shared_no_voice">🤝 Shared AI (No Voice)</option>
         <option value="individual">👤 Personal AI</option>
         <option value="none">🚫 No AI</option>
       </select>

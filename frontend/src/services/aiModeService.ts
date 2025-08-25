@@ -6,6 +6,7 @@
 
 export enum AIMode {
   SHARED = 'shared',
+  SHARED_NO_VOICE = 'shared_no_voice',
   INDIVIDUAL = 'individual',
   NONE = 'none'
 }
@@ -67,6 +68,10 @@ export class AIModeService {
     return this.currentMode === AIMode.SHARED;
   }
 
+  isSharedNoVoiceMode(): boolean {
+    return this.currentMode === AIMode.SHARED_NO_VOICE;
+  }
+
   isIndividualMode(): boolean {
     return this.currentMode === AIMode.INDIVIDUAL;
   }
@@ -81,6 +86,9 @@ export class AIModeService {
     }
     if (this.isNoneMode()) {
       return 'no_ai'; // Channel that doesn't exist for AI disabled mode
+    }
+    if (this.isSharedNoVoiceMode()) {
+      return `ai_shared_no_voice_${this.roomId}`;
     }
     return `ai_shared_${this.roomId}`;
   }
