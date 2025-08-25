@@ -116,7 +116,7 @@ export default defineComponent({
                     <p>Implement a Gift Card Purchase Assistant that helps the user make the best use of their gift card.</p>
                     <ul>
                         <li><strong>Subtask 1:</strong> Given a chosen item index, find another item whose price equals the remaining gift card balance (gift_card_value - chosen_item_price).</li>
-                        <li><strong>Subtask 2:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li> <i>(note: do not call function from subtask 1 here)</i>
+                        <li><strong>Subtask 2:</strong> Return all pairs of item indices whose prices add up exactly to the gift card value.</li> <i>(<b>bonus:</b> try to optimize it until o(n) complexity without calling function from subtask 1)</i>
                         <li><strong>Subtask 3:</strong> Find the pair (by indices) that includes the highest possible individual item price among all valid pairs that sum to the gift card value.</li>
                     </ul>
                 `,
@@ -150,7 +150,7 @@ export default defineComponent({
                     <p>Implement a Step Tracker Insight program that provides the following informations on the user's daily step data.</p>
                     <ul>
                         <li><strong>Subtask 1 - Daily Average:</strong> Calculate the overall average steps per day across all recorded days.</li>
-                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li>
+                        <li><strong>Subtask 2 - Best K-Day Streak Average:</strong> Find the highest average step count within any k consecutive days.</li> <i>(<b>bonus:</b> try to optimize it until o(n) complexity without calling function from subtask 1)</i>
                         <li><strong>Subtask 3 - Shortest Target Subarray:</strong> Find the shortest contiguous subarray (consecutive days) where the total number of steps is at least a given target.</li>
                     </ul>
                 `,
