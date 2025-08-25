@@ -147,7 +147,7 @@ class ReflectionService:
             
             # Generate response using OpenAI
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are a supportive programming tutor. Keep responses very short (1-2 sentences max). Ask simple, focused questions to help students reflect."},
                     {"role": "user", "content": reflection_prompt}

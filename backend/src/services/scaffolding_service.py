@@ -84,7 +84,7 @@ class ScaffoldingService:
                         """
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are a coding tutor that creates minimal scaffolding. Never provide complete solutions - only structure with blanks for students to fill in."},
                     {"role": "user", "content": prompt}

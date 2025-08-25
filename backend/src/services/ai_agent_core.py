@@ -96,111 +96,98 @@ class AIAgent:
                 return self._handle_progress_check(room_id, context)
 
         # Get recent conversation context (last 5 messages)
-        recent_conversation = ""
-        for msg in context.messages[-5:]:
-            recent_conversation += f"{msg.username}: {msg.content}\n"
+        recent_messages = context.messages[-10:] if len(context.messages) >= 10 else context.messages
         
         # Check if the last message contains direct AI mention
         last_message = context.messages[-1] if context.messages else None
         is_direct_mention = last_message and self._is_direct_ai_mention(last_message.content)
         
-        # Check if user is asking for syntax/code
-        # is_syntax_request = last_message and self._is_syntax_request(last_message.content)
-        
         # Build AI message history context to avoid repetition
         ai_history_context = self._build_ai_history_context(context)
         
-        # Add special syntax request guidance
-        # if is_syntax_request:
-        #     ai_history_context += "\n\n🚨 SYNTAX REQUEST DETECTED: User is asking for actual code/syntax. PROVIDE CONCRETE CODE EXAMPLES (but not the complete solution)!"
+        # Create comprehensive system message combining context and instructions
+        problem_info = f"Problem: {context.problem_title or 'General coding'}"
+        if context.problem_description:
+            problem_info += f" - {context.problem_description}"
         
-        # Adjust prompt based on whether this is a direct mention
+        code_info = f"Current code:\n{context.code_context}" if context.code_context else "No code visible yet"
+        
+        # Check if user is asking for syntax/code
+        is_asking_for_syntax = last_message and any(keyword in last_message.content.lower() for keyword in ['syntax', 'example', 'code', 'documentation'])
+        
+        # Build comprehensive system message
         if is_direct_mention:
-            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
+            system_message = f"""You are Bob, an AI pair programming assistant focused on LEARNING. The user has directly mentioned you with @AI or similar keyword.
 
-                            Problem Context:
-                            - Problem title: {context.problem_title or "General coding"}
-                            - Problem description: {context.problem_description or "No specific problem"}
-                            - Language: {context.programming_language}
+{problem_info}
+Language: {context.programming_language}
 
-                            Recent Conversation (FOCUS ON LAST MESSAGE):
-                            {recent_conversation}
+{code_info}
 
-                            Code Context:
-                            {context.code_context if context.code_context else "No code visible"}
+{ai_history_context}
 
-                            {ai_history_context}
+LEARNING APPROACH:
+- Help users when they need it, but avoid unnecessary responses when they're satisfied
+- When users say 'I'm not sure', 'I need help', or ask questions, provide helpful guidance
+- When they say 'okay', 'thanks', 'got it', you can choose not to respond
+- CRITICAL: Look at your recent messages above - you CANNOT repeat the same type of response
+- Each message must be more concrete than the previous if they still need help
+- Balance learning with being actually helpful
+{"- Can show small syntax examples when users need concrete help" if is_asking_for_syntax else "- Focus on brief conceptual hints rather than code snippets"}
 
-                            PROGRESSIVE LEARNING APPROACH - Help users learn briefly:
-                            - CRITICAL: Look at your recent messages above - you CANNOT repeat the same type of response
-                            - If you've already asked questions, DON'T ask more questions - give concrete answers
-                            - If you've given general hints, provide SPECIFIC details or examples
-                            - When they say "I don't know" repeatedly - they need concrete help, NOT more questions
-                            - FOLLOW THE GUIDANCE LEVEL: Each message must be more concrete than the previous
-                            - Balance learning with being actually helpful - don't leave them completely stuck
-                            - IMPORTANT: When thy asked about syntax, provide concrete code examples (not the complete solution though)
+Provide a helpful response (10-30 words) or choose not to respond if they seem satisfied."""
 
-                            Provide a helpful response (10-30 words). Be different from your previous messages and more concrete.
-
-                            Your response:"""
         else:
-            prompt = f"""You are Bob, an AI pair programming assistant focused on LEARNING.
+            system_message = f"""You are Bob, an AI pair programming assistant focused on LEARNING.
 
-                        Problem Context:
-                        - Problem title: {context.problem_title or "General coding"}
-                        - Problem description: {context.problem_description or "No specific problem"}
-                        - Language: {context.programming_language}
+{problem_info}
+Language: {context.programming_language}
 
-                        Recent Conversation:
-                        {recent_conversation}
+{code_info}
 
-                        Code Context:
-                        {context.code_context if context.code_context else "No code visible"}
+{ai_history_context}
 
-                        {ai_history_context}
+INTERVENTION APPROACH:
+- Help users when they need it, but avoid unnecessary responses when they're satisfied
+- When users say 'I'm not sure', 'I need help', or ask questions, provide helpful guidance
+- When they say 'okay', 'thanks', 'got it', return "NO_RESPONSE"
+- CRITICAL: Look at your recent messages above - you CANNOT repeat the same type of response
+- Each response must be MORE CONCRETE than your previous ones if they still need help
+- NEVER end responses with questions like "Need help with...?" or "Want me to...?"
+{"- Can show small syntax examples when users need concrete help" if is_asking_for_syntax else "- Focus on brief conceptual hints rather than code snippets"}
 
-                        PROGRESSIVE INTERVENTION - Guide learning briefly:
-                        - CRITICAL: Look at your recent messages above - you CANNOT give the same type of response again
-                        - If you've asked questions before, DON'T ask more questions - provide specific answers
-                        - If you gave general hints before, give CONCRETE examples or show actual code
-                        - When they say "I don't know" repeatedly: They need specific help, NOT more questions
-                        - FOLLOW THE GUIDANCE LEVEL: Each response must be MORE CONCRETE than your previous ones
-                        - IMPORTANT: Do NOT provide complete solutions - give brief, focused help
-                        
-                        Provide a helpful response (10-30 words). Be different from your previous messages and escalate to more concrete help.
+Return EXACTLY "NO_RESPONSE" (if no response needed) OR provide a helpful response (10-30 words)."""
 
-                        Your response:"""
-            
-
-        print("🔍 AI Decision prompt:", prompt, "...")  # Log first 200 chars for debugging
-
-        try:
-            # Create dynamic system message based on context
-            is_asking_for_syntax = any(keyword in context.messages[-1].content.lower() for keyword in ['syntax', 'example', 'code', 'documentation'])
-            
-            if is_asking_for_syntax:
-                # system_message = "You are Bob, a learning-focused pair programming assistant Provide brief, helpful code examples (1-3 lines) to demonstrate the concept. Show specific syntax patterns when explicitly requested. Avoid complete solutions but give concrete examples."
-                system_message = "You are Bob, a learning-focused pair programming assistant. Provide brief conceptual hints as statements. Avoid complete solutions but can show small syntax examples when progression indicates users need concrete help (after giving hints)."
+        # Convert conversation to proper message format
+        messages = [{"role": "system", "content": system_message}]
+        
+        # Add recent conversation messages in proper format
+        for msg in recent_messages:
+            if msg.userId == 'ai_agent_bob':
+                messages.append({"role": "assistant", "content": msg.content})
             else:
-                system_message = "You are Bob, a learning-focused pair programming assistant. NEVER provide code snippets, complete solutions, or full implementations. Do NOT use code blocks or show syntax. Only give brief conceptual hints as statements, not questions."
-            
-            print(system_message)
-            print(prompt)
+                messages.append({"role": "user", "content": f"{msg.username}: {msg.content}"})
 
+        print("🔍 AI Decision - System message:", system_message[:200], "...")
+        print(f"🔍 AI Decision - Message count: {len(messages)} messages")
+        print(messages)
+        try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": prompt}
-                ],
+                model="gpt-4.1-mini",
+                messages=messages,
                 max_tokens=90 if is_direct_mention else 60,
                 temperature=0.7
             )
             
             llm_response = response.choices[0].message.content.strip()
             
+            # Handle NO_RESPONSE for idle interventions (but not direct mentions)
+            if llm_response == "NO_RESPONSE" and not is_direct_mention:
+                print(f"🚫 AI chose not to intervene: User seems satisfied/working independently")
+                return False, ""
+            
             # Always respond with whatever the LLM generates (no YES/NO parsing)
-            if llm_response:
+            if llm_response and llm_response != "NO_RESPONSE":
                 mention_type = "DIRECT MENTION" if is_direct_mention else "IDLE INTERVENTION"
                 print(f"✅ AI WILL INTERVENE ({mention_type}): {llm_response[:50]}...")
                 return True, llm_response
@@ -295,7 +282,7 @@ Your response:"""
             
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are a helpful pair programming assistant doing progress monitoring. Only intervene when users truly need guidance."},
                     {"role": "user", "content": prompt}
@@ -960,7 +947,7 @@ Respond with ONE of these formats:
 Your response:"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are a helpful pair programming assistant focused on encouraging good planning practices."},
                     {"role": "user", "content": prompt}

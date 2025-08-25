@@ -35,7 +35,7 @@ class AICodeAnalysisService:
             analysis_prompt = self._create_code_analysis_prompt(code, language, context, problem_context)
             
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert code reviewer. Analyze for real errors only. Single loops through helper function results are efficient O(n). Only suggest optimization for actual nested loops (for i, for j patterns). Trust helper functions work correctly."},
                     {"role": "user", "content": analysis_prompt}
@@ -261,7 +261,7 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[{"role": "user", "content": prompt}],
                 # max_tokens=50,
                 # temperature=0.3

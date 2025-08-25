@@ -1,6 +1,6 @@
 """
 AI Agent Service - A proactive AI teammate for pair programming
-Uses GPT-4o-mini to analyze conversations and provide helpful insights
+Uses GPT-4.1-mini to analyze conversations and provide helpful insights
 
 This module provides a simplified interface to the modular AI agent system.
 The original large file has been decomposed into specialized service modules:

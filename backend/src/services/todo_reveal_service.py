@@ -102,7 +102,7 @@ arr.sort()
 """
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are a precise coding assistant. Generate only ONE LINE of code needed to replace a TODO comment, with no extra explanations or formatting."},
                     {"role": "user", "content": prompt}
