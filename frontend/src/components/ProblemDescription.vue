@@ -212,6 +212,39 @@ export default defineComponent({
                     "0 ≤ start_i ≤ end_i ≤ 10⁴",
                     "0 ≤ new_interval[0] ≤ new_interval[1] ≤ 10⁴"
                 ]
+            },
+            {
+                title: "4. Common Elements Finder",
+                description: `
+                    <p><strong>Scenario:</strong> You are given two integer arrays, nums1 and nums2.</p>
+                    <p>Implement a Common Elements Finder that helps identify overlap between the two arrays.</p>
+                    <ul>
+                        <li><strong>Subtask 1:</strong> Given two integer arrays, determine whether they share at least one common element. Return true if yes, otherwise false.</li>
+                        <li><strong>Subtask 2:</strong> Return an array of the intersection of nums1 and nums2. Each element in the result must appear as many times as it shows in both arrays, and you may return the result in any order. <i>(<b>bonus:</b> try to optimize it to O(n) complexity).</i></li>
+                        <li><strong>Subtask 3:</strong> Find and return the unique elements that appear in both arrays (without duplicates).</li>
+                    </ul>
+                `,
+                examples: [
+                    {
+                        input: "nums1 = [1,2,2,1], nums2 = [2,2]",
+                        output: "true",
+                        explanation: "Both arrays contain the element 2."
+                    },
+                    {
+                        input: "nums1 = [1,2,2,1], nums2 = [2,2]",
+                        output: "[2,2]",
+                        explanation: "The intersection includes two 2's since both arrays have at least two 2's."
+                    },
+                    {
+                        input: "nums1 = [1,2,2,1], nums2 = [2,2]",
+                        output: "[2]",
+                        explanation: "Only element 2 appears in both arrays. Return unique elements only, sorted."
+                    }
+                ],
+                constraints: [
+                    "1 ≤ nums1.length, nums2.length ≤ 1000",
+                    "0 ≤ nums1[i], nums2[i] ≤ 1000"
+                ]
             }
         ])
 
@@ -530,6 +563,123 @@ int main() {
 }
                 `;
 
+        // Boilerplate code for Common Elements Finder (Python)
+        const commonElementsBoilerplate = `nums1 = [1,2,2,1]
+nums2 = [2,2]
+
+def has_common_elements(nums1, nums2):
+  # Subtask 1: Determine whether the two arrays share at least one common element
+  # Return True if yes, otherwise False
+
+  return False
+
+def intersection_with_duplicates(nums1, nums2):
+  # Subtask 2: Return an array of the intersection of nums1 and nums2
+  # Each element in the result must appear as many times as it shows in both arrays
+  
+  return []
+
+def unique_intersection(nums1, nums2):
+  # Subtask 3: Find and return the unique elements that appear in both arrays
+  # Return the result in sorted order (without duplicates)
+  
+  return []
+
+# Example usage:
+print(has_common_elements(nums1, nums2))
+print(intersection_with_duplicates(nums1, nums2))
+print(unique_intersection(nums1, nums2))
+                `;
+
+        // Boilerplate code for Common Elements Finder (Java)
+        const commonElementsBoilerplateJava = `import java.util.*;
+
+public class CommonElementsFinder {
+    public static void main(String[] args) {
+        int[] nums1 = {1,2,2,1};
+        int[] nums2 = {2,2};
+        
+        System.out.println(hasCommonElements(nums1, nums2));
+        System.out.println(Arrays.toString(intersectionWithDuplicates(nums1, nums2)));
+        System.out.println(Arrays.toString(uniqueIntersection(nums1, nums2)));
+    }
+    
+    public static boolean hasCommonElements(int[] nums1, int[] nums2) {
+        // Subtask 1: Determine whether the two arrays share at least one common element
+        // Return true if yes, otherwise false
+        
+        return false;
+    }
+    
+    public static int[] intersectionWithDuplicates(int[] nums1, int[] nums2) {
+        // Subtask 2: Return an array of the intersection of nums1 and nums2
+        // Each element in the result must appear as many times as it shows in both arrays
+        
+        return new int[0];
+    }
+    
+    public static int[] uniqueIntersection(int[] nums1, int[] nums2) {
+        // Subtask 3: Find and return the unique elements that appear in both arrays
+        // Return the result in sorted order (without duplicates)
+        
+        return new int[0];
+    }
+}
+                `;
+
+        // Boilerplate code for Common Elements Finder (C++)
+        const commonElementsBoilerplateCpp = `#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+bool hasCommonElements(vector<int>& nums1, vector<int>& nums2) {
+    // Subtask 1: Determine whether the two arrays share at least one common element
+    // Return true if yes, otherwise false
+    
+    return false;
+}
+
+vector<int> intersectionWithDuplicates(vector<int>& nums1, vector<int>& nums2) {
+    // Subtask 2: Return a vector of the intersection of nums1 and nums2
+    // Each element in the result must appear as many times as it shows in both arrays
+    
+    return {};
+}
+
+vector<int> uniqueIntersection(vector<int>& nums1, vector<int>& nums2) {
+    // Subtask 3: Find and return the unique elements that appear in both arrays
+    // Return the result in sorted order (without duplicates)
+    
+    return {};
+}
+
+int main() {
+    vector<int> nums1 = {1,2,2,1};
+    vector<int> nums2 = {2,2};
+    
+    cout << (hasCommonElements(nums1, nums2) ? "true" : "false") << endl;
+    
+    vector<int> result2 = intersectionWithDuplicates(nums1, nums2);
+    cout << "[";
+    for (int i = 0; i < result2.size(); i++) {
+        cout << result2[i];
+        if (i < result2.size() - 1) cout << ",";
+    }
+    cout << "]" << endl;
+    
+    vector<int> result3 = uniqueIntersection(nums1, nums2);
+    cout << "[";
+    for (int i = 0; i < result3.size(); i++) {
+        cout << result3[i];
+        if (i < result3.size() - 1) cout << ",";
+    }
+    cout << "]" << endl;
+    
+    return 0;
+}
+                `;
+
         // Boilerplate code for First Repeated Number (Python)
         const firstRepeatedBoilerplate = `nums = [2, 5, 3, 2, 8, 7]
 
@@ -591,19 +741,22 @@ int main() {
                 firstRepeatedBoilerplate, // First Repeated Number
                 giftCardBoilerplate, // Gift Card Purchase Assistant
                 stepTrackerBoilerplate, // Step Tracker Insight
-                meetingRoomBoilerplate // Meeting Room Scheduler
+                meetingRoomBoilerplate, // Meeting Room Scheduler
+                commonElementsBoilerplate // Common Elements Finder
             ],
             java: [
                 firstRepeatedBoilerplateJava, // First Repeated Number
                 giftCardBoilerplateJava, // Gift Card Purchase Assistant
                 stepTrackerBoilerplateJava, // Step Tracker Insight
-                meetingRoomBoilerplateJava // Meeting Room Scheduler
+                meetingRoomBoilerplateJava, // Meeting Room Scheduler
+                commonElementsBoilerplateJava // Common Elements Finder
             ],
             cpp: [
                 firstRepeatedBoilerplateCpp, // First Repeated Number
                 giftCardBoilerplateCpp, // Gift Card Purchase Assistant
                 stepTrackerBoilerplateCpp, // Step Tracker Insight
-                meetingRoomBoilerplateCpp // Meeting Room Scheduler
+                meetingRoomBoilerplateCpp, // Meeting Room Scheduler
+                commonElementsBoilerplateCpp // Common Elements Finder
             ]
         };
 
