@@ -210,14 +210,8 @@
                     <span class="ai-icon">🤖</span>
                     <span class="ai-text">Bob speaking (recording paused)</span>
                 </div>
-                <div v-if="currentAutoTranscript && autoRecordingEnabled && !isSpeaking" class="auto-transcript">
-                    <span class="voice-label">Voice:</span> "{{ currentAutoTranscript }}"
-                </div>
-                <div v-if="isProcessingSpeech" class="processing-indicator">
-                    <span class="processing-text">Processing speech...</span>
-                </div>
-                <div v-if="speechQueue.length > 0" class="queue-indicator">
-                    <span class="queue-text">{{ speechQueue.length }} message(s) in queue</span>
+                <div v-if="autoRecordingEnabled && !isSpeaking" class="auto-transcript" ref="autoTranscriptRef">
+                    <span class="voice-label">Voice:</span> "<span v-if="currentAutoTranscript">{{ currentAutoTranscript }}</span>"
                 </div>
             </div>
             <div v-if="!speechSupported && showSpeechWarning" class="speech-warning">
@@ -324,6 +318,7 @@ export default defineComponent({
 
         // @AI Mention State
         const messageInput = ref(null)
+        const autoTranscriptRef = ref(null)
 
         // Computed property to check if message has @AI mention
         const hasAIMention = computed(() => {
@@ -2360,12 +2355,22 @@ export default defineComponent({
             return messages.value
         })
 
+        // Auto-scroll the transcript to the right as text is being recorded
+        watch(currentAutoTranscript, () => {
+            nextTick(() => {
+                if (autoTranscriptRef.value) {
+                    autoTranscriptRef.value.scrollLeft = autoTranscriptRef.value.scrollWidth
+                }
+            })
+        })
+
         return {
             messages: filteredMessages,
             allMessages: messages, // Keep reference to all messages for addMessage function
             newMessage,
             messagesContainer,
             messageInput,
+            autoTranscriptRef,
             isConnected,
             onlineUsers,
             speechSupported,
@@ -3034,39 +3039,35 @@ export default defineComponent({
     border-radius: 4px;
     border-left: 2px solid #d1d5db;
     margin-bottom: 0.25rem;
+    height: 1.5rem; /* Fixed height for one line of text */
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.auto-transcript::-webkit-scrollbar {
+    height: 2px;
+}
+
+.auto-transcript::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.auto-transcript::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 1px;
+}
+
+.auto-transcript::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
 }
 
 .voice-label {
     font-weight: 500;
     font-style: normal;
     color: #9ca3af;
-}
-
-.processing-indicator {
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
-    color: #f59e0b;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.processing-text {
-    animation: pulse 1s infinite;
-}
-
-.queue-indicator {
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
-    color: #6b7280;
-    font-weight: 500;
-}
-
-.queue-text {
-    background: rgba(107, 114, 128, 0.1);
-    padding: 0.25rem 0.5rem;
-    border-radius: 12px;
 }
 
 .speech-warning {
