@@ -31,13 +31,10 @@ class AICodeAnalysisService:
             from .ai_agent_core import get_ai_agent
             ai_agent = get_ai_agent()
             if ai_agent:
-                ai_agent.track_code_analysis(
-                    room_id=context.get('room_id', 'unknown'),
-                    analysis_type='code_block_analysis',
-                    analysis_content=f"{language} code block ({len(code)} chars)"
-                )
+                # We'll track after we have the analysis result
+                pass
         except Exception as e:
-            print(f"⚠️ Failed to track code analysis: {e}")
+            print(f"⚠️ Failed to get AI agent for tracking: {e}")
         
         if not self.client:
             return self._mock_code_analysis(code, language, context, problem_context)
@@ -61,12 +58,29 @@ class AICodeAnalysisService:
             analysis_text = response.choices[0].message.content
             analysis = self._parse_code_analysis(analysis_text, code, context, problem_context)
             
-            return {
+            result = {
                 'issues': analysis.get('issues', []),
                 'suggestions': analysis.get('suggestions', []),
                 'timestamp': datetime.now().isoformat(),
                 'confidence': analysis.get('confidence', 'medium')
             }
+            
+            # Track this code analysis activity with complete results
+            try:
+                from .ai_agent_core import get_ai_agent
+                ai_agent = get_ai_agent()
+                if ai_agent:
+                    ai_agent.track_code_analysis(
+                        room_id=context.get('room_id', 'unknown'),
+                        analysis_type='code_block_analysis',
+                        code_block=code,
+                        language=language,
+                        analysis_result=result
+                    )
+            except Exception as e:
+                print(f"⚠️ Failed to track code analysis result: {e}")
+            
+            return result
             
         except Exception as e:
             print(f"❌ Error in OpenAI code analysis: {e}")
@@ -357,20 +371,22 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
     def _run_panel_analysis(self, room_id: str, code: str, result: dict, problem_context: str):
         """Background task for panel analysis"""
         try:
-            # Track this code execution analysis activity
+            analysis = self.analyze_execution_for_panel(code, result, problem_context)
+            
+            # Track this code execution analysis activity with complete context
             try:
                 from .ai_agent_core import get_ai_agent
                 ai_agent = get_ai_agent()
                 if ai_agent:
-                    ai_agent.track_code_analysis(
+                    ai_agent.track_code_execution_analysis(
                         room_id=room_id,
-                        analysis_type='execution_panel_analysis',
-                        analysis_content=f"python code execution analysis ({len(code)} chars)"
+                        code=code,
+                        language='python',
+                        execution_result=result,
+                        analysis_result=analysis
                     )
             except Exception as e:
                 print(f"⚠️ Failed to track panel analysis: {e}")
-            
-            analysis = self.analyze_execution_for_panel(code, result, problem_context)
             
             if analysis:
                 print(f"📊 Panel analysis: {analysis['message']}")

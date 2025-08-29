@@ -24,6 +24,9 @@ class ChatMessage(Document):
     ai_trigger_type = StringField(max_length=50)  # 'direct_mention', 'idle_5s', 'progress_check', etc.
     is_reflection = BooleanField(default=False)
     
+    # Rich tracking data for analytics (stored as flexible JSON)
+    extra_data = DictField()  # Stores detailed tracking information for AI activities
+    
     meta = {
         'collection': 'chat_messages',
         'indexes': [
@@ -54,7 +57,8 @@ class ChatMessage(Document):
             'is_auto_generated': self.is_auto_generated,
             'is_ai_message': self.is_ai_message,
             'ai_trigger_type': self.ai_trigger_type,
-            'is_reflection': self.is_reflection
+            'is_reflection': self.is_reflection,
+            'extra_data': self.extra_data or {}
         }
     
     def __str__(self):

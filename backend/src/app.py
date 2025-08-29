@@ -767,10 +767,6 @@ def execute_code_endpoint():
                     if individual_ai:
                         individual_ai.start_panel_analysis_for_user(room_id, user_id, code, result)
                         print(f"🔍 Started individual panel analysis for user {user_id} in room {room_id}")
-                        
-                        # Track this code execution analysis
-                        if ai_agent:
-                            ai_agent.track_code_execution_analysis(room_id, f"{language} code execution ({len(code)} chars)")
                     else:
                         print("⚠️ Individual AI service not available")
                 else:
@@ -778,9 +774,6 @@ def execute_code_endpoint():
                     if ai_agent:
                         ai_agent.start_panel_analysis(room_id, code, result)
                         print(f"🔍 Started shared panel analysis for room {room_id}")
-                        
-                        # Track this code execution analysis  
-                        ai_agent.track_code_execution_analysis(room_id, f"{language} code execution ({len(code)} chars)")
                     else:
                         print("⚠️ Shared AI agent not available")
                         

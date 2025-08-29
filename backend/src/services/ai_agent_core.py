@@ -119,7 +119,23 @@ class AIAgent:
         # Run in a separate thread to avoid blocking
         threading.Thread(target=save_to_db, daemon=True).start()
 
-    def _save_tracking_message_to_db_async(self, content: str, room_id: str, ai_trigger_type: str, username: str = None):
+    def _extract_todo_type(self, todo_line: str) -> str:
+        """Extract the type/purpose of the TODO comment"""
+        todo_lower = todo_line.lower()
+        if 'implement' in todo_lower or 'write' in todo_lower:
+            return 'implementation'
+        elif 'fix' in todo_lower or 'bug' in todo_lower:
+            return 'bug_fix'
+        elif 'optimize' in todo_lower or 'improve' in todo_lower:
+            return 'optimization'
+        elif 'test' in todo_lower:
+            return 'testing'
+        elif 'add' in todo_lower:
+            return 'feature_addition'
+        else:
+            return 'general'
+
+    def _save_tracking_message_to_db_async(self, content: str, room_id: str, ai_trigger_type: str, username: str = None, extra_data: dict = None):
         """Save AI tracking message directly to database without adding to conversation context"""
         def save_to_db():
             try:
@@ -150,7 +166,8 @@ class AIAgent:
                     is_auto_generated=True,
                     is_ai_message=True,
                     ai_trigger_type=ai_trigger_type,
-                    is_reflection=False
+                    is_reflection=False,
+                    extra_data=extra_data or {}
                 )
                 
                 # Save to database
@@ -165,41 +182,107 @@ class AIAgent:
         # Run in a separate thread to avoid blocking
         threading.Thread(target=save_to_db, daemon=True).start()
 
-    def track_code_analysis(self, room_id: str, analysis_type: str, analysis_content: str):
-        """Track code analysis activity without adding to conversation context"""
+    def track_code_analysis(self, room_id: str, analysis_type: str, code_block: str, language: str, analysis_result: dict = None):
+        """Track code analysis activity with complete context"""
         print(f"Tracking code analysis ({analysis_type}) for room {room_id}")
+        
+        # Build comprehensive tracking content
+        tracking_content = {
+            "activity_type": "code_analysis",
+            "analysis_type": analysis_type,
+            "language": language,
+            "code_block": code_block,
+            "code_length": len(code_block),
+            "analysis_result": analysis_result or {},
+            "issues_found": len(analysis_result.get('issues', [])) if analysis_result else 0,
+            "suggestions_provided": len(analysis_result.get('suggestions', [])) if analysis_result else 0
+        }
+        
+        content_summary = f"Code Analysis ({analysis_type}): {language} code ({len(code_block)} chars) - Found {tracking_content['issues_found']} issues, {tracking_content['suggestions_provided']} suggestions"
+        
         self._save_tracking_message_to_db_async(
-            content=f"Code Analysis ({analysis_type}): {analysis_content}",
+            content=content_summary,
             room_id=room_id,
             ai_trigger_type='code_analysis',
-            username="AI Code Analysis"
+            username="AI Code Analysis",
+            extra_data=tracking_content
         )
 
-    def track_scaffolding_activity(self, room_id: str, scaffolding_content: str):
-        """Track task scaffolding activity without adding to conversation context"""
+    def track_scaffolding_activity(self, room_id: str, comment_line: str, language: str, scaffolding_result: dict = None):
+        """Track task scaffolding activity with complete context"""
+        # Build comprehensive tracking content
+        tracking_content = {
+            "activity_type": "scaffolding",
+            "language": language,
+            "original_comment": comment_line,
+            "scaffolding_generated": scaffolding_result.get('hasScaffolding', False) if scaffolding_result else False,
+            "scaffolding_code": scaffolding_result.get('scaffoldingCode', '') if scaffolding_result else '',
+            "hint_provided": scaffolding_result.get('hint', '') if scaffolding_result else '',
+            "scaffolding_lines": len(scaffolding_result.get('scaffoldingCode', '').split('\n')) if scaffolding_result and scaffolding_result.get('scaffoldingCode') else 0
+        }
+        
+        content_summary = f"Task Scaffolding: {language} - '{comment_line}' -> {'Generated' if tracking_content['scaffolding_generated'] else 'No scaffolding'} ({tracking_content['scaffolding_lines']} lines)"
+        
         self._save_tracking_message_to_db_async(
-            content=f"Task Scaffolding: {scaffolding_content}",
+            content=content_summary,
             room_id=room_id,
             ai_trigger_type='task_scaffolding',
-            username="AI Scaffolding"
+            username="AI Scaffolding",
+            extra_data=tracking_content
         )
 
-    def track_todo_reveal(self, room_id: str, todo_content: str):
-        """Track TODO reveal activity without adding to conversation context"""
+    def track_todo_reveal(self, room_id: str, todo_line: str, language: str, todo_result: dict = None):
+        """Track TODO reveal activity with complete context"""
+        # Build comprehensive tracking content
+        tracking_content = {
+            "activity_type": "todo_reveal",
+            "language": language,
+            "original_todo": todo_line,
+            "todo_success": todo_result.get('success', False) if todo_result else False,
+            "generated_code": todo_result.get('generatedCode', '') if todo_result else '',
+            "explanation": todo_result.get('explanation', '') if todo_result else '',
+            "generated_lines": len(todo_result.get('generatedCode', '').split('\n')) if todo_result and todo_result.get('generatedCode') else 0,
+            "todo_type": self._extract_todo_type(todo_line)
+        }
+        
+        content_summary = f"TODO Revealed: {language} - '{todo_line}' -> {'Success' if tracking_content['todo_success'] else 'Failed'} ({tracking_content['generated_lines']} lines generated)"
+        
         self._save_tracking_message_to_db_async(
-            content=f"TODO Revealed: {todo_content}",
+            content=content_summary,
             room_id=room_id,
             ai_trigger_type='todo_reveal',
-            username="AI TODO"
+            username="AI TODO",
+            extra_data=tracking_content
         )
 
-    def track_code_execution_analysis(self, room_id: str, execution_analysis: str):
-        """Track code execution analysis without adding to conversation context"""
+    def track_code_execution_analysis(self, room_id: str, code: str, language: str, execution_result: dict, analysis_result: dict = None):
+        """Track code execution analysis with complete context"""
+        # Build comprehensive tracking content
+        tracking_content = {
+            "activity_type": "code_execution_analysis",
+            "language": language,
+            "executed_code": code,
+            "code_length": len(code),
+            "execution_output": execution_result.get('output', ''),
+            "execution_error": execution_result.get('error', ''),
+            "execution_success": execution_result.get('success', True),
+            "execution_time_ms": execution_result.get('executionTime', 0),
+            "exit_code": execution_result.get('exitCode', 0),
+            "analysis_provided": analysis_result is not None,
+            "analysis_result": analysis_result or {}
+        }
+        
+        status = "Success" if tracking_content['execution_success'] else "Error"
+        content_summary = f"Code Execution Analysis: {language} code ({len(code)} chars) -> {status} in {tracking_content['execution_time_ms']}ms"
+        if tracking_content['execution_error']:
+            content_summary += f" - Error: {tracking_content['execution_error'][:50]}..."
+        
         self._save_tracking_message_to_db_async(
-            content=f"Code Execution Analysis: {execution_analysis}",
+            content=content_summary,
             room_id=room_id,
             ai_trigger_type='code_execution_analysis',
-            username="AI Execution Analysis"
+            username="AI Execution Analysis",
+            extra_data=tracking_content
         )
 
     def get_session_messages(self, session_id: str, limit: int = None) -> List[Dict]:
@@ -1377,23 +1460,27 @@ Your response:"""
         """Generate scaffolding with proper tracking"""
         from .scaffolding_service import ScaffoldingService
         
-        # Track the activity first
-        self.track_scaffolding_activity(room_id, f"{language} scaffolding: {comment_line}")
-        
         # Create service instance and generate scaffolding
         scaffolding_service = ScaffoldingService()
-        return scaffolding_service.generate_scaffolding(comment_line, language, full_code)
+        result = scaffolding_service.generate_scaffolding(comment_line, language, full_code)
+        
+        # Track the activity with complete context
+        self.track_scaffolding_activity(room_id, comment_line, language, result)
+        
+        return result
 
     def generate_todo_code_with_tracking(self, room_id: str, todo_line: str, language: str, full_code: str = "", problem_context: str = ""):
         """Generate TODO code with proper tracking"""
         from .todo_reveal_service import TodoRevealService
         
-        # Track the activity first
-        self.track_todo_reveal(room_id, f"{language} TODO reveal: {todo_line}")
-        
         # Create service instance and generate TODO code
         todo_reveal_service = TodoRevealService()
-        return todo_reveal_service.generate_todo_code(todo_line, language, full_code, problem_context)
+        result = todo_reveal_service.generate_todo_code(todo_line, language, full_code, problem_context)
+        
+        # Track the activity with complete context
+        self.track_todo_reveal(room_id, todo_line, language, result)
+        
+        return result
 
 # Global AI agent instance
 ai_agent = None
