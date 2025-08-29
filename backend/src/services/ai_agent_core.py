@@ -93,7 +93,7 @@ class AIAgent:
                 
                 # Create database record using fields from message
                 chat_message = ChatMessage(
-                    message_id=message.id,
+                    message_id=str(message.id),
                     content=message.content,
                     username=message.username,
                     user_id=message.userId,
