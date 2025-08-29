@@ -285,6 +285,51 @@ class AIAgent:
             extra_data=tracking_content
         )
 
+    def track_enter_event(self, room_id: str, current_line: str, line_number: int, language: str, user_id: str = None, full_code: str = None):
+        """Track enter key press events in the code editor with current line context"""
+        print(f"Tracking enter event for room {room_id} at line {line_number}")
+        print(f"  Current line: '{current_line}' (length: {len(current_line)})")
+        print(f"  Full code length: {len(full_code) if full_code else 0} characters")
+        
+        # Analyze the line content
+        is_empty_line = len(current_line.strip()) == 0
+        is_whitespace_only = len(current_line) > 0 and len(current_line.strip()) == 0
+        
+        # Build comprehensive tracking content
+        tracking_content = {
+            "activity_type": "enter_event",
+            "language": language,
+            "current_line": current_line,
+            "current_line_trimmed": current_line.strip(),
+            "line_number": line_number,
+            "user_id": user_id or "unknown",
+            "full_code": full_code or "",
+            "code_length": len(full_code) if full_code else 0,
+            "current_line_length": len(current_line),
+            "current_line_trimmed_length": len(current_line.strip()),
+            "is_empty_line": is_empty_line,
+            "is_whitespace_only": is_whitespace_only,
+            "has_meaningful_content": len(current_line.strip()) > 0
+        }
+        
+        # Create a more descriptive summary
+        if is_empty_line:
+            line_description = "empty line"
+        elif is_whitespace_only:
+            line_description = f"whitespace-only line ({len(current_line)} spaces/tabs)"
+        else:
+            line_description = f"'{current_line.strip()}'"
+        
+        content_summary = f"Enter Event: Line {line_number} - {line_description} (Code: {tracking_content['code_length']} chars)"
+        
+        self._save_tracking_message_to_db_async(
+            content=content_summary,
+            room_id=room_id,
+            ai_trigger_type='enter_event',
+            username=f"Code Editor ({user_id or 'User'})",
+            extra_data=tracking_content
+        )
+
     def get_session_messages(self, session_id: str, limit: int = None) -> List[Dict]:
         """Retrieve all messages for a session from MongoDB"""
         try:

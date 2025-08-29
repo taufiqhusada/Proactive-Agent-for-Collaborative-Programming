@@ -1501,6 +1501,76 @@ def get_code_executions(room_id):
         print(f"❌ Error retrieving code executions: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/track-enter-event', methods=['POST'])
+def track_enter_event():
+    """Track enter key press events in the code editor"""
+    try:
+        data = request.json
+        room_id = data.get('room_id')
+        current_line = data.get('current_line', '')
+        line_number = data.get('line_number', 0)
+        language = data.get('language', 'python')
+        user_id = data.get('user_id')
+        full_code = data.get('full_code')
+        
+        print(f"⌨️  Enter Event Tracking Request:")
+        print(f"  Room ID: {room_id}")
+        print(f"  Line Number: {line_number}")
+        print(f"  Current Line: '{current_line}'")
+        print(f"  User ID: {user_id}")
+        print(f"  Language: {language}")
+        
+        if not room_id:
+            return jsonify({'success': False, 'error': 'room_id is required'}), 400
+        
+        # Track the enter event using AI agent
+        ai_agent.track_enter_event(
+            room_id=room_id,
+            current_line=current_line,
+            line_number=line_number,
+            language=language,
+            user_id=user_id,
+            full_code=full_code
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Enter event tracked successfully',
+            'tracked_data': {
+                'current_line': current_line,
+                'line_number': line_number,
+                'current_line_length': len(current_line),
+                'full_code_length': len(full_code) if full_code else 0
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error tracking enter event: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-enter-events', methods=['GET'])
+def get_enter_events():
+    """Retrieve enter event tracking data for debugging"""
+    try:
+        room_id = request.args.get('room_id')
+        limit = int(request.args.get('limit', 10))
+        
+        # Get enter events from AI agent
+        enter_events = ai_agent.get_ai_messages_by_trigger(
+            room_id=room_id, 
+            ai_trigger_type='enter_event', 
+            limit=limit
+        )
+        
+        return jsonify({
+            'success': True,
+            'events': enter_events,
+            'count': len(enter_events)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error retrieving enter events: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ================================
 # MESSAGE RETRIEVAL API ENDPOINTS

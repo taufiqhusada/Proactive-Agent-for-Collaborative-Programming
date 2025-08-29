@@ -270,6 +270,58 @@ export default defineComponent({
             // Add keyboard event listener for enhanced detection
             const editorDom = view.value.dom
             editorDom.addEventListener('keydown', codeAnalysis.handleKeyDown)
+            
+            // Add Enter key tracking with proper state management
+            let isEnterKeyPressed = false
+            let enterPressLineContent = ''
+            let enterPressLineNumber = -1
+            
+            // Listen for keydown to detect Enter key
+            editorDom.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.keyCode === 13) {
+                    isEnterKeyPressed = true
+                    
+                    // Capture the current line BEFORE any changes
+                    const state = view.value.state
+                    const cursor = state.selection.main.head
+                    const line = state.doc.lineAt(cursor)
+                    const lineNumber = line.number - 1
+                    
+                    // Store the line content before Enter processing
+                    enterPressLineContent = line.text
+                    enterPressLineNumber = lineNumber
+                    
+                    console.log('⌨️ Enter key detected (BEFORE processing):', {
+                        lineNumber,
+                        originalLine: `"${line.text}"`,
+                        trimmedLine: `"${line.text.trim()}"`,
+                        hasContent: line.text.trim().length > 0,
+                        cursorPosition: cursor
+                    })
+                    
+                    // Use a small timeout to capture after the Enter is processed
+                    setTimeout(() => {
+                        if (isEnterKeyPressed) {
+                            console.log('📝 Processing Enter event after timeout:', {
+                                storedLineContent: `"${enterPressLineContent}"`,
+                                storedLineContentTrimmed: `"${enterPressLineContent.trim()}"`,
+                                storedLineNumber: enterPressLineNumber,
+                                hasStoredContent: enterPressLineContent.trim().length > 0
+                            })
+                            
+                            // Track the enter event with the stored line content
+                            const meaningfulContent = enterPressLineContent.trim()
+                            const currentCode = view.value.state.doc.toString()
+                            trackEnterEvent(meaningfulContent, enterPressLineNumber, selectedLanguage.value, currentCode)
+                            
+                            // Reset the flag
+                            isEnterKeyPressed = false
+                            enterPressLineContent = ''
+                            enterPressLineNumber = -1
+                        }
+                    }, 10) // Small delay to let Enter processing complete
+                }
+            })
         }
 
         const sendProblemToBackend = (problem) => {
@@ -438,6 +490,48 @@ export default defineComponent({
         const handleChatSessionStateChanged = (data) => {
             console.log('🔄 Chat session state changed:', data)
             chatSessionStarted.value = data.sessionStarted
+        }
+
+        // Track Enter key events with improved approach
+        const trackEnterEvent = async (currentLine, lineNumber, language, fullCode) => {
+            try {
+                console.log('📤 Sending enter event data:', {
+                    room_id: roomId,
+                    current_line: `"${currentLine}"`, // Add quotes to see empty strings
+                    current_line_length: currentLine?.length || 0,
+                    line_number: lineNumber,
+                    language: language,
+                    user_id: currentUserId.value,
+                    full_code_length: fullCode?.length || 0,
+                    full_code_preview: fullCode?.substring(0, 100) + (fullCode?.length > 100 ? '...' : ''),
+                    is_empty: currentLine?.length === 0
+                })
+                
+                const response = await fetch('/api/track-enter-event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room_id: roomId,
+                        current_line: currentLine,
+                        line_number: lineNumber,
+                        language: language,
+                        user_id: currentUserId.value,
+                        full_code: fullCode
+                    })
+                })
+                
+                const result = await response.json()
+                if (result.success) {
+                    console.log('✅ Enter event tracked:', result.message)
+                    console.log('📊 Tracked data confirmation:', result.tracked_data)
+                } else {
+                    console.error('❌ Failed to track enter event:', result.error)
+                }
+            } catch (error) {
+                console.error('❌ Error tracking enter event:', error)
+            }
         }
 
         // Watch for socket ID changes (reconnections)
