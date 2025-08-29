@@ -93,28 +93,72 @@
 
         <div class="chat-messages" ref="messagesContainer">
             
-            <div v-for="message in messages" :key="message.id" class="message-wrapper">
+            <div v-for="displayItem in processedMessages" :key="displayItem.id" class="message-wrapper">
+                <!-- Voice Group Message (Collapsible) -->
+                <div v-if="displayItem.isVoiceGroup">
+                    <!-- Collapsed Voice Group Bubble -->
+                    <div 
+                        @click="toggleVoiceGroup(displayItem.id)"
+                        :class="[
+                            'message', 
+                            'voice-group-message',
+                            { 'voice-group-expanded': isVoiceGroupExpanded(displayItem.id) }
+                        ]"
+                    >
+                        <div class="voice-group-header">
+                            <span class="voice-badge">🎤</span>
+                            <span class="voice-group-content">{{ displayItem.content }}</span>
+                            <span class="voice-group-count">({{ displayItem.originalMessages.length }})</span>
+                            <span class="voice-group-toggle">{{ isVoiceGroupExpanded(displayItem.id) ? '▼' : '▶' }}</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Expanded Voice Messages -->
+                    <div v-if="isVoiceGroupExpanded(displayItem.id)" class="voice-group-expanded-messages">
+                        <div 
+                            v-for="originalMsg in displayItem.originalMessages" 
+                            :key="originalMsg.id"
+                            :class="[
+                                'message', 
+                                'voice-expanded-message',
+                                { 'own-message': originalMsg.userId === currentUserId }
+                            ]"
+                        >
+                            <div class="message-header">
+                                <span class="username">
+                                    <span class="voice-badge">🎤</span>
+                                    {{ originalMsg.username || 'Unknown' }}
+                                </span>
+                                <span class="timestamp">{{ formatTime(originalMsg.timestamp) }}</span>
+                            </div>
+                            <div class="message-content">{{ originalMsg.content || 'No content' }}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Regular Message -->
                 <div 
+                    v-else
                     :class="[
                         'message', 
                         { 
-                            'own-message': message.userId === currentUserId,
-                            'ai-message': message.isAI && !message.isExecutionHelp && !message.isReflection,
-                            'ai-reflection-message': message.isAI && message.isReflection,
-                            'ai-execution-help': message.isAI && message.isExecutionHelp,
-                            'system-message': message.isSystem
+                            'own-message': displayItem.userId === currentUserId,
+                            'ai-message': displayItem.isAI && !displayItem.isExecutionHelp && !displayItem.isReflection,
+                            'ai-reflection-message': displayItem.isAI && displayItem.isReflection,
+                            'ai-execution-help': displayItem.isAI && displayItem.isExecutionHelp,
+                            'system-message': displayItem.isSystem
                         }
                     ]"
                 >
                     <div class="message-header">
                         <span class="username">
-                            <span v-if="message.isAI && message.isExecutionHelp" class="ai-badge">🔍</span>
-                            <span v-else-if="message.isAI" class="ai-badge">👨‍💻</span>
-                            {{ message.username || 'Unknown' }}
+                            <span v-if="displayItem.isAI && displayItem.isExecutionHelp" class="ai-badge">🔍</span>
+                            <span v-else-if="displayItem.isAI" class="ai-badge">👨‍💻</span>
+                            {{ displayItem.username || 'Unknown' }}
                         </span>
-                        <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
+                        <span class="timestamp">{{ formatTime(displayItem.timestamp) }}</span>
                     </div>
-                    <div class="message-content">{{ message.content || 'No content' }}</div>
+                    <div class="message-content">{{ displayItem.content || 'No content' }}</div>
                 </div>
             </div>
             <div v-if="messages.length === 0" class="empty-chat">
@@ -293,6 +337,9 @@ export default defineComponent({
         const isTyping = ref(false)
         let typingTimer = null
         const TYPING_TIMEOUT = 1000 // Stop typing detection after 1 second of no input
+
+        // Voice group expansion state
+        const expandedVoiceGroups = ref(new Set()) // Set of expanded voice group IDs
 
         // PCM Audio Context for real-time streaming
         let audioContext = null
@@ -2355,6 +2402,58 @@ export default defineComponent({
             return messages.value
         })
 
+        // Process messages to group consecutive voice messages
+        const processedMessages = computed(() => {
+            const processed = []
+            let currentVoiceGroup = null
+            
+            for (let i = 0; i < filteredMessages.value.length; i++) {
+                const message = filteredMessages.value[i]
+                
+                // Check if this is a voice message (isAutoGenerated = true)
+                if (message.isAutoGenerated && !message.isAI && !message.isSystem) {
+                    // This is a voice message from a user
+                    if (!currentVoiceGroup) {
+                        // Start a new voice group
+                        currentVoiceGroup = {
+                            id: `voice_group_${i}_${Date.now()}`,
+                            content: 'users talking',
+                            username: 'Voice Activity',
+                            userId: 'voice_group',
+                            timestamp: message.timestamp,
+                            isVoiceGroup: true,
+                            isSystem: false,
+                            isAI: false,
+                            originalMessages: [message]
+                        }
+                    } else {
+                        // Add to existing voice group
+                        currentVoiceGroup.originalMessages.push(message)
+                        // Update timestamp to the latest message
+                        currentVoiceGroup.timestamp = message.timestamp
+                    }
+                } else {
+                    // This is not a voice message (typed message, AI message, or system message)
+                    
+                    // If we have a current voice group, add it to processed messages
+                    if (currentVoiceGroup) {
+                        processed.push(currentVoiceGroup)
+                        currentVoiceGroup = null
+                    }
+                    
+                    // Add the non-voice message normally
+                    processed.push(message)
+                }
+            }
+            
+            // Don't forget to add any remaining voice group at the end
+            if (currentVoiceGroup) {
+                processed.push(currentVoiceGroup)
+            }
+            
+            return processed
+        })
+
         // Auto-scroll the transcript to the right as text is being recorded
         watch(currentAutoTranscript, () => {
             nextTick(() => {
@@ -2364,8 +2463,27 @@ export default defineComponent({
             })
         })
 
+        // Voice group expansion functions
+        const toggleVoiceGroup = (voiceGroupId) => {
+            if (expandedVoiceGroups.value.has(voiceGroupId)) {
+                expandedVoiceGroups.value.delete(voiceGroupId)
+            } else {
+                expandedVoiceGroups.value.add(voiceGroupId)
+            }
+            
+            // Scroll to bottom after expansion/collapse
+            nextTick(() => {
+                scrollToBottom()
+            })
+        }
+
+        const isVoiceGroupExpanded = (voiceGroupId) => {
+            return expandedVoiceGroups.value.has(voiceGroupId)
+        }
+
         return {
             messages: filteredMessages,
+            processedMessages,
             allMessages: messages, // Keep reference to all messages for addMessage function
             newMessage,
             messagesContainer,
@@ -2404,7 +2522,9 @@ export default defineComponent({
             handleTypingStart,
             startSession,
             confirmResetSession,
-            resetRecording
+            resetRecording,
+            toggleVoiceGroup,
+            isVoiceGroupExpanded
         }
     }
 })
@@ -2650,6 +2770,86 @@ export default defineComponent({
     border-radius: 16px;
 }
 
+.message.voice-group-message {
+    background: #f8f9fa;
+    color: #9ca3af;
+    align-self: center;
+    max-width: 60%;
+    text-align: center;
+    font-style: italic;
+    font-size: 0.75rem;
+    border-radius: 20px;
+    border: 1px solid #e5e7eb;
+    padding: 0.25rem 1rem;
+    margin: 0.15rem 0;
+    opacity: 0.7;
+    box-shadow: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.message.voice-group-message:hover {
+    opacity: 1;
+    background: #f1f3f4;
+    border-color: #d1d5db;
+}
+
+.message.voice-group-message.voice-group-expanded {
+    opacity: 1;
+    background: #f1f3f4;
+    border-color: #d1d5db;
+}
+
+.voice-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.voice-group-content {
+    flex: 1;
+}
+
+.voice-group-count {
+    font-size: 0.7rem;
+    opacity: 0.8;
+}
+
+.voice-group-toggle {
+    font-size: 0.7rem;
+    opacity: 0.8;
+    margin-left: 0.25rem;
+}
+
+.voice-group-expanded-messages {
+    margin-top: 0.5rem;
+    padding-left: 1rem;
+    border-left: 2px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.message.voice-expanded-message {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin: 0;
+    font-size: 0.8rem;
+    max-width: 75%;
+    align-self: flex-start;
+    color: #1f2937; /* Black text */
+}
+
+.message.voice-expanded-message.own-message {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+    border-color: rgba(102, 126, 234, 0.3);
+    align-self: flex-end;
+    color: #1f2937; /* Black text for own messages too */
+}
+
 .message-header {
     display: flex;
     justify-content: space-between;
@@ -2665,6 +2865,11 @@ export default defineComponent({
 }
 
 .ai-badge {
+    margin-right: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.voice-badge {
     margin-right: 0.25rem;
     font-size: 0.875rem;
 }
