@@ -26,6 +26,19 @@ class AICodeAnalysisService:
         """Analyze a code block for potential issues and provide suggestions"""
         print(f"🔍 Starting code analysis with OpenAI")
         
+        # Track this code analysis activity
+        try:
+            from .ai_agent_core import get_ai_agent
+            ai_agent = get_ai_agent()
+            if ai_agent:
+                ai_agent.track_code_analysis(
+                    room_id=context.get('room_id', 'unknown'),
+                    analysis_type='code_block_analysis',
+                    analysis_content=f"{language} code block ({len(code)} chars)"
+                )
+        except Exception as e:
+            print(f"⚠️ Failed to track code analysis: {e}")
+        
         if not self.client:
             return self._mock_code_analysis(code, language, context, problem_context)
         
@@ -344,6 +357,19 @@ Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace n
     def _run_panel_analysis(self, room_id: str, code: str, result: dict, problem_context: str):
         """Background task for panel analysis"""
         try:
+            # Track this code execution analysis activity
+            try:
+                from .ai_agent_core import get_ai_agent
+                ai_agent = get_ai_agent()
+                if ai_agent:
+                    ai_agent.track_code_analysis(
+                        room_id=room_id,
+                        analysis_type='execution_panel_analysis',
+                        analysis_content=f"python code execution analysis ({len(code)} chars)"
+                    )
+            except Exception as e:
+                print(f"⚠️ Failed to track panel analysis: {e}")
+            
             analysis = self.analyze_execution_for_panel(code, result, problem_context)
             
             if analysis:
