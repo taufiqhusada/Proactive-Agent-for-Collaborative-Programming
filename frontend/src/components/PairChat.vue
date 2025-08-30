@@ -488,7 +488,13 @@ export default defineComponent({
                 typingTimer = null
             }
 
-            const messageContent = newMessage.value.trim()
+            let messageContent = newMessage.value.trim()
+            
+            // Always add @AI prefix if not already present
+            if (!messageContent.toLowerCase().startsWith('@ai ') && messageContent.toLowerCase() !== '@ai') {
+                messageContent = '@AI ' + messageContent
+            }
+            
             newMessage.value = ''
 
             // Use the same socket logic for all modes, just different room handling
@@ -1303,9 +1309,16 @@ export default defineComponent({
                 return
             }
             
+            let messageContent = transcript.trim()
+            
+            // Always add @AI prefix if not already present
+            if (!messageContent.toLowerCase().startsWith('@ai ') && messageContent.toLowerCase() !== '@ai') {
+                messageContent = '@AI ' + messageContent
+            }
+            
             const message = {
                 id: Date.now() + Math.random(),
-                content: transcript.trim(),
+                content: messageContent,
                 userId: userId,
                 username: props.username, // Always use the current user's name for auto-generated messages
                 timestamp: new Date().toISOString(),
