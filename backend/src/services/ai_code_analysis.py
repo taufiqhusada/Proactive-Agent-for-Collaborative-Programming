@@ -276,6 +276,10 @@ CRITICAL RULES:
 - Single loops through function results = EFFICIENT O(n)
 - ONLY suggest hashmap for actual nested for loops (for i, for j pattern)
 - Max-finding with single loop = CORRECT and EFFICIENT
+- ONLY analyze subtasks that have actual code implementation
+- Skip subtasks that are just comments, TODOs, or placeholders without code
+- Ignore commented-out subtask implementations (like "# remaining_balance = gift_card_value - prices[chosen_index]")
+- Ignore subtasks that only contain comments followed by "return None" or similar placeholders
 
 Response (max 150 chars):
 - Errors: "Fix: [issue]"
@@ -283,14 +287,14 @@ Response (max 150 chars):
 - Actual inefficiency: "Optimize: [suggestion]"
 - Working efficiently: "correct"
 
-Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace nested loops with hashmap, subtask 3: ..."
+Examples: "Fix: Missing )", "correct", "Subtask 1: correct, subtask 2: replace nested loops with hashmap" (only mention subtasks with actual code)
 """
             print(f"🔍 Panel analysis prompt: {prompt}...")  # Log first 200 chars
 
             response = self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[{"role": "user", "content": prompt}],
-                # max_tokens=50,
+                # max_tokens=100,
                 # temperature=0.3
             )
             

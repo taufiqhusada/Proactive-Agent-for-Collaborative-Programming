@@ -185,7 +185,7 @@ export default defineComponent({
                     <p>Implement a Meeting Room Analyzer that provides insights on meeting schedules and helps optimize room usage.</p>
                     <ul>
                         <li><strong>Subtask 1 - Longest Meeting:</strong> Find the meeting with the longest duration.</li>
-                        <li><strong>Subtask 2 - Detect Conflicts:</strong> Identify all pairs of meetings that have overlapping time intervals.</li>
+                        <li><strong>Subtask 2 - Detect Conflicts:</strong> Identify all pairs of meetings that have overlapping time intervals.</li> (<i><b>bonus:</b> try to optimize it until O(n log n) complexity</i>)
                         <li><strong>Subtask 3 - Merge Overlapping:</strong> Merge all overlapping or adjacent meeting intervals into a single interval.</li>
                     </ul>
                 `,
