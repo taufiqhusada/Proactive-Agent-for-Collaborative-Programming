@@ -1311,11 +1311,6 @@ export default defineComponent({
             
             let messageContent = transcript.trim()
             
-            // Always add @AI prefix if not already present
-            if (!messageContent.toLowerCase().startsWith('@ai ') && messageContent.toLowerCase() !== '@ai') {
-                messageContent = '@AI ' + messageContent
-            }
-            
             const message = {
                 id: Date.now() + Math.random(),
                 content: messageContent,
