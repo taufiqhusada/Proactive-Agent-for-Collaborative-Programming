@@ -1301,9 +1301,10 @@ Your response:"""
         self.audio_service.set_voice_config(voice, model, speed)
 
     def analyze_code_block(self, code: str, language: str, context: Dict[str, Any], 
-                          problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          problem_context: Optional[Dict[str, Any]] = None, 
+                          room_id: Optional[str] = None) -> Dict[str, Any]:
         """Analyze a code block for potential issues and provide suggestions"""
-        return self.code_analysis_service.analyze_code_block(code, language, context, problem_context)
+        return self.code_analysis_service.analyze_code_block(code, language, context, problem_context, room_id)
 
     def start_panel_analysis(self, room_id: str, code: str, result: dict):
         """Start non-blocking AI analysis for execution panel"""

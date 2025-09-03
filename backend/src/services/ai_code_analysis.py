@@ -22,15 +22,16 @@ class AICodeAnalysisService:
         self.validation_tasks = {}    # Track running validation tasks
 
     def analyze_code_block(self, code: str, language: str, context: Dict[str, Any], 
-                          problem_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          problem_context: Optional[Dict[str, Any]] = None,
+                          room_id: Optional[str] = None) -> Dict[str, Any]:
         """Analyze a code block for potential issues and provide suggestions"""
-        print(f"🔍 Starting code analysis with OpenAI")
+        print(f"🔍 Starting code analysis with OpenAI (room_id: {room_id})")
         
         # Track this code analysis activity
         try:
             from .ai_agent_core import get_ai_agent
             ai_agent = get_ai_agent()
-            if ai_agent:
+            if ai_agent and room_id:
                 # We'll track after we have the analysis result
                 pass
         except Exception as e:
@@ -69,14 +70,16 @@ class AICodeAnalysisService:
             try:
                 from .ai_agent_core import get_ai_agent
                 ai_agent = get_ai_agent()
-                if ai_agent:
+                if ai_agent and room_id:
                     ai_agent.track_code_analysis(
-                        room_id=context.get('room_id', 'unknown'),
+                        room_id=room_id,
                         analysis_type='code_block_analysis',
                         code_block=code,
                         language=language,
                         analysis_result=result
                     )
+                else:
+                    print(f"⚠️ Code analysis tracking skipped - room_id: {room_id}, ai_agent: {ai_agent is not None}")
             except Exception as e:
                 print(f"⚠️ Failed to track code analysis result: {e}")
             

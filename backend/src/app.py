@@ -7,6 +7,11 @@ import sys
 import subprocess
 import threading
 import time
+import csv
+import re
+import tempfile
+import shutil
+import random
 from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
@@ -994,7 +999,7 @@ def analyze_code_block():
             return jsonify({'issues': []})
         
         # Use AI agent to analyze the code with problem context
-        analysis = ai_agent.analyze_code_block(code, language, context, problem_context)
+        analysis = ai_agent.analyze_code_block(code, language, context, problem_context, room_id)
         
         result = {
             'issues': analysis.get('issues', []),
@@ -1705,6 +1710,605 @@ def get_conversation_stats():
         
     except Exception as e:
         print(f"❌ Error generating conversation stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rooms', methods=['GET'])
+def get_room_ids():
+    """Get distinct room IDs from chat messages"""
+    try:
+        from database.models import ChatMessage
+        
+        # Get query parameters
+        limit = request.args.get('limit', default=100, type=int)
+        include_stats = request.args.get('include_stats', default='false').lower() == 'true'
+        
+        # Get distinct room IDs from chat messages
+        room_ids = ChatMessage.objects.distinct('room_id')
+        
+        # Limit the results if specified
+        if limit:
+            room_ids = room_ids[:limit]
+        
+        result = {
+            'success': True,
+            'room_ids': room_ids,
+            'count': len(room_ids)
+        }
+        
+        # Include statistics if requested
+        if include_stats:
+            room_stats = []
+            for room_id in room_ids:
+                message_count = ChatMessage.objects(room_id=room_id).count()
+                latest_message = ChatMessage.objects(room_id=room_id).order_by('-timestamp').first()
+                
+                room_stat = {
+                    'room_id': room_id,
+                    'message_count': message_count,
+                    'latest_timestamp': latest_message.timestamp.isoformat() if latest_message else None
+                }
+                room_stats.append(room_stat)
+            
+            result['room_stats'] = room_stats
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ Error retrieving room IDs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rooms/<room_id>/messages', methods=['GET'])
+def get_messages_by_room(room_id):
+    """Get chat messages for a specific room ID, with option to include unknown room_id messages from same timeframe"""
+    try:
+        from database.models import ChatMessage
+        
+        # Get query parameters
+        limit = request.args.get('limit', default=50, type=int)
+        skip = request.args.get('skip', default=0, type=int)
+        include_ai = request.args.get('include_ai', default='true').lower() == 'true'
+        only_ai = request.args.get('only_ai', default='false').lower() == 'true'
+        fields = request.args.get('fields')  # Comma-separated list of fields
+        include_unknown_room = request.args.get('include_unknown_room', default='false').lower() == 'true'
+        order_by = request.args.get('order_by', 'timestamp')
+        order_direction = request.args.get('order_direction', 'desc')
+        
+        # Build ordering string
+        order_field = f"-{order_by}" if order_direction == 'desc' else order_by
+        
+        # Build primary query
+        query = {'room_id': room_id}
+        
+        # Handle AI message filtering
+        if only_ai:
+            query['is_ai_message'] = True
+        elif not include_ai:
+            query['is_ai_message'] = False
+        
+        # Helper function to filter message fields
+        def filter_message_fields(message_dict, selected_fields=None):
+            if not selected_fields:
+                return message_dict
+            
+            filtered = {}
+            for field in selected_fields:
+                if field in message_dict:
+                    filtered[field] = message_dict[field]
+            return filtered
+        
+        # Parse fields parameter
+        selected_fields = None
+        if fields:
+            selected_fields = [f.strip() for f in fields.split(',')]
+            print(f"📋 Selected fields: {selected_fields}")
+        
+        # Get messages for the specific room
+        messages = ChatMessage.objects(**query).order_by(order_field).skip(skip).limit(limit)
+        message_list = [filter_message_fields(message.to_dict(), selected_fields) for message in messages]
+        
+        # Get total count for the specific room
+        total_count = ChatMessage.objects(**query).count()
+        
+        # If include_unknown_room is true, get timestamp range and fetch unknown room messages
+        unknown_messages = []
+        unknown_count = 0
+        
+        if include_unknown_room and message_list:
+            print(f"📋 Including unknown room_id messages within timestamp range")
+            
+            # Get timestamp range from the fetched messages
+            timestamps = [msg.get('timestamp') for msg in message_list if msg.get('timestamp')]
+            if timestamps:
+                # Convert string timestamps to datetime objects for proper MongoDB comparison
+                from datetime import datetime
+                datetime_timestamps = []
+                for ts in timestamps:
+                    if isinstance(ts, str):
+                        try:
+                            # Parse ISO format timestamp string to datetime object
+                            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            datetime_timestamps.append(dt)
+                        except ValueError:
+                            print(f"⚠️  Could not parse timestamp: {ts}")
+                    elif hasattr(ts, 'timestamp'):  # Already a datetime object
+                        datetime_timestamps.append(ts)
+                    else:
+                        datetime_timestamps.append(ts)
+                
+                if datetime_timestamps:
+                    min_timestamp = min(datetime_timestamps)
+                    max_timestamp = max(datetime_timestamps)
+                    
+                    print(f"🔍 Timestamp range: {min_timestamp} to {max_timestamp}")
+                    print(f"🔍 Total timestamps found: {len(timestamps)}")
+                    print(f"🔍 Converted timestamps: {len(datetime_timestamps)}")
+                else:
+                    print(f"❌ No valid timestamps could be converted")
+                    min_timestamp = max_timestamp = None
+                
+                # Build query for unknown room messages within timestamp range
+                # Skip this if we're already querying the unknown room
+                if room_id != 'unknown' and min_timestamp and max_timestamp:
+                    # Use MongoEngine syntax instead of raw MongoDB operators
+                    unknown_query = {
+                        'room_id': 'unknown',
+                        'timestamp__gte': min_timestamp,
+                        'timestamp__lte': max_timestamp
+                    }
+                    
+                    # Apply same AI filtering to unknown messages
+                    if only_ai:
+                        unknown_query['is_ai_message'] = True
+                    elif not include_ai:
+                        unknown_query['is_ai_message'] = False
+                    
+                    print(f"🔍 Unknown query: {unknown_query}")
+                    
+                    # Debug: Check if ANY unknown messages exist
+                    total_unknown = ChatMessage.objects(room_id='unknown').count()
+                    print(f"🔍 Total unknown messages in DB: {total_unknown}")
+                    
+                    # Debug: Check unknown messages around this time
+                    if total_unknown > 0:
+                        sample_unknown = ChatMessage.objects(room_id='unknown').order_by('-timestamp').limit(3)
+                        print(f"🔍 Sample unknown message timestamps:")
+                        for msg in sample_unknown:
+                            print(f"    - {msg.timestamp} ({type(msg.timestamp)})")
+                        
+                        # Debug: Test the exact query to see what's happening
+                        print(f"🔍 Testing timestamp range query...")
+                        test_query_result = ChatMessage.objects(**unknown_query)
+                        print(f"🔍 Raw query result count: {test_query_result.count()}")
+                        if test_query_result.count() > 0:
+                            for test_msg in test_query_result.limit(3):
+                                print(f"    Found: {test_msg.timestamp} - {test_msg.content[:50]}")
+                        
+                        # Debug: Try alternative MongoEngine syntax
+                        print(f"🔍 Trying MongoEngine __gte __lte syntax...")
+                        alt_query_result = ChatMessage.objects(
+                            room_id='unknown',
+                            timestamp__gte=min_timestamp,
+                            timestamp__lte=max_timestamp
+                        )
+                        print(f"🔍 Alternative query result count: {alt_query_result.count()}")
+                        if alt_query_result.count() > 0:
+                            for test_msg in alt_query_result.limit(3):
+                                print(f"    Alt Found: {test_msg.timestamp} - {test_msg.content[:50]}")
+                        
+                        # Debug: Check if there are any unknown messages in September 1st
+                        from datetime import datetime
+                        sep_1_start = datetime(2025, 9, 1)
+                        sep_1_end = datetime(2025, 9, 2)
+                        sep_1_count = ChatMessage.objects(room_id='unknown', timestamp__gte=sep_1_start, timestamp__lt=sep_1_end).count()
+                        print(f"🔍 Unknown messages on Sep 1, 2025: {sep_1_count}")
+                        
+                        # Debug: Check messages in exact time range using MongoEngine syntax
+                        exact_range_count = ChatMessage.objects(
+                            room_id='unknown',
+                            timestamp__gte=min_timestamp,
+                            timestamp__lte=max_timestamp
+                        ).count()
+                        print(f"🔍 Messages in exact range using __gte/__lte: {exact_range_count}")
+                    
+                    # Get unknown room messages within the timestamp range
+                    unknown_msg_objects = ChatMessage.objects(**unknown_query).order_by(order_field)
+                    unknown_messages = [filter_message_fields(msg.to_dict(), selected_fields) for msg in unknown_msg_objects]
+                    unknown_count = len(unknown_messages)
+                    
+                    print(f"📋 Found {unknown_count} unknown room messages in timestamp range")
+                else:
+                    print(f"📋 Skipping unknown room search since we're already querying room_id='unknown'")
+        
+        elif include_unknown_room and not message_list:
+            print(f"📋 No messages found for room {room_id}, cannot determine timestamp range for unknown messages")
+        
+        # Combine and sort all messages if we have both
+        all_messages = message_list + unknown_messages
+        if include_unknown_room and unknown_messages:
+            # Sort combined messages by timestamp
+            if order_by == 'timestamp':
+                reverse_sort = (order_direction == 'desc')
+                all_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=reverse_sort)
+            print(f"📋 Combined {len(message_list)} room messages with {len(unknown_messages)} unknown messages")
+        
+        return jsonify({
+            'success': True,
+            'room_id': room_id,
+            'messages': all_messages if include_unknown_room else message_list,
+            'room_message_count': len(message_list),
+            'unknown_message_count': unknown_count,
+            'total_messages': len(all_messages),
+            'room_total': total_count,
+            'skip': skip,
+            'limit': limit,
+            'selected_fields': selected_fields,
+            'include_ai': include_ai,
+            'include_unknown_room': include_unknown_room,
+            'ordered_by': f"{order_by} ({order_direction}ending)"
+        })
+        
+    except Exception as e:
+        print(f"❌ Error retrieving messages for room {room_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rooms/prefix/<prefix>/messages', methods=['GET'])
+def get_messages_by_room_prefix(prefix):
+    """Get chat messages for all rooms that start with a specific prefix"""
+    try:
+        from database.models import ChatMessage
+        import re
+        
+        # Get query parameters
+        limit = request.args.get('limit', default=100, type=int)
+        skip = request.args.get('skip', default=0, type=int)
+        include_ai = request.args.get('include_ai', default='true').lower() == 'true'
+        only_ai = request.args.get('only_ai', default='false').lower() == 'true'
+        group_by_room = request.args.get('group_by_room', default='false').lower() == 'true'
+        fields = request.args.get('fields')  # Comma-separated list of fields
+        include_unknown_room = request.args.get('include_unknown_room', default='false').lower() == 'true'
+        
+        # Build regex pattern for room_id prefix matching
+        # Escape special regex characters in prefix and add .* for anything after
+        escaped_prefix = re.escape(prefix)
+        room_pattern = f"^{escaped_prefix}.*"
+        
+        # Build query with regex for room_id
+        query = {'room_id': {'$regex': room_pattern, '$options': 'i'}}  # case insensitive
+        
+        # Handle AI message filtering
+        if only_ai:
+            query['is_ai_message'] = True
+        elif not include_ai:
+            query['is_ai_message'] = False
+        
+        print(f"🔍 Searching for rooms with prefix: {prefix}")
+        print(f"🔍 Using regex pattern: {room_pattern}")
+        
+        # Helper function to filter message fields
+        def filter_message_fields(message_dict, selected_fields=None):
+            if not selected_fields:
+                return message_dict
+            
+            filtered = {}
+            for field in selected_fields:
+                if field in message_dict:
+                    filtered[field] = message_dict[field]
+                elif field == 'user_id':  # Handle alias
+                    filtered['user_id'] = message_dict.get('user_id')
+                elif field == 'ai_trigger_type':
+                    filtered['ai_trigger_type'] = message_dict.get('ai_trigger_type')
+            return filtered
+        
+        # Parse fields parameter
+        selected_fields = None
+        if fields:
+            selected_fields = [f.strip() for f in fields.split(',')]
+            print(f"📋 Selected fields: {selected_fields}")
+        
+        # Get matching room IDs first
+        matching_room_ids = ChatMessage.objects(**query).distinct('room_id')
+        print(f"📋 Found {len(matching_room_ids)} matching rooms: {matching_room_ids}")
+        
+        # Get order parameter (default to timestamp descending for chronological view)
+        order_by = request.args.get('order_by', 'timestamp')
+        order_direction = request.args.get('order_direction', 'desc')
+        
+        # Build ordering string
+        order_field = f"-{order_by}" if order_direction == 'desc' else order_by
+        
+        if group_by_room:
+            # Group messages by room, but each room's messages ordered by timestamp
+            result_by_room = {}
+            total_messages = 0
+            
+            for room_id in matching_room_ids:
+                room_query = query.copy()
+                room_query['room_id'] = room_id
+                
+                room_messages = ChatMessage.objects(**room_query).order_by(order_field).limit(limit)
+                room_message_list = [filter_message_fields(message.to_dict(), selected_fields) for message in room_messages]
+                room_total = ChatMessage.objects(**room_query).count()
+                
+                result_by_room[room_id] = {
+                    'messages': room_message_list,
+                    'count': len(room_message_list),
+                    'total': room_total
+                }
+                total_messages += room_total
+            
+            return jsonify({
+                'success': True,
+                'prefix': prefix,
+                'matching_rooms': matching_room_ids,
+                'room_count': len(matching_room_ids),
+                'messages_by_room': result_by_room,
+                'total_messages': total_messages,
+                'grouped': True,
+                'ordered_by': f"{order_by} ({order_direction}ending)",
+                'selected_fields': selected_fields,
+                'include_ai': include_ai
+            })
+        else:
+            # Get all messages from matching rooms (flat list) - ordered by timestamp across all rooms
+            messages = ChatMessage.objects(**query).order_by(order_field).skip(skip).limit(limit)
+            message_list = [filter_message_fields(message.to_dict(), selected_fields) for message in messages]
+            total_count = ChatMessage.objects(**query).count()
+            
+            # If include_unknown_room is true, get timestamp range and fetch unknown room messages
+            unknown_messages = []
+            unknown_count = 0
+            
+            if include_unknown_room and message_list:
+                print(f"📋 Including unknown room_id messages within timestamp range for prefix {prefix}")
+                
+                # Get timestamp range from the fetched messages
+                timestamps = [msg.get('timestamp') for msg in message_list if msg.get('timestamp')]
+                if timestamps:
+                    # Convert string timestamps to datetime objects for proper MongoDB comparison
+                    from datetime import datetime
+                    datetime_timestamps = []
+                    for ts in timestamps:
+                        if isinstance(ts, str):
+                            try:
+                                # Parse ISO format timestamp string to datetime object
+                                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                                datetime_timestamps.append(dt)
+                            except ValueError:
+                                print(f"⚠️  Could not parse timestamp: {ts}")
+                        elif hasattr(ts, 'timestamp'):  # Already a datetime object
+                            datetime_timestamps.append(ts)
+                        else:
+                            datetime_timestamps.append(ts)
+                    
+                    if datetime_timestamps:
+                        min_timestamp = min(datetime_timestamps)
+                        max_timestamp = max(datetime_timestamps)
+                        
+                        print(f"🔍 Timestamp range for prefix {prefix}: {min_timestamp} to {max_timestamp}")
+                        
+                        # Build query for unknown room messages within timestamp range
+                        # Only include if prefix doesn't already match 'unknown'
+                        if not re.match(f"^{re.escape(prefix)}.*", 'unknown', re.IGNORECASE):
+                            unknown_query = {
+                                'room_id': 'unknown',
+                                'timestamp__gte': min_timestamp,
+                                'timestamp__lte': max_timestamp
+                            }
+                            
+                            # Apply same AI filtering to unknown messages
+                            if only_ai:
+                                unknown_query['is_ai_message'] = True
+                            elif not include_ai:
+                                unknown_query['is_ai_message'] = False
+                            
+                            print(f"🔍 Unknown query for prefix {prefix}: {unknown_query}")
+                            
+                            # Get unknown room messages within the timestamp range
+                            unknown_msg_objects = ChatMessage.objects(**unknown_query).order_by(order_field)
+                            unknown_messages = [filter_message_fields(msg.to_dict(), selected_fields) for msg in unknown_msg_objects]
+                            unknown_count = len(unknown_messages)
+                            
+                            print(f"📋 Found {unknown_count} unknown room messages in timestamp range for prefix {prefix}")
+                        else:
+                            print(f"📋 Skipping unknown room search since prefix '{prefix}' already matches 'unknown'")
+            
+            elif include_unknown_room and not message_list:
+                print(f"📋 No messages found for prefix {prefix}, cannot determine timestamp range for unknown messages")
+            
+            # Combine and sort all messages if we have both
+            all_messages = message_list + unknown_messages
+            if include_unknown_room and unknown_messages:
+                # Sort combined messages by timestamp
+                if order_by == 'timestamp':
+                    reverse_sort = (order_direction == 'desc')
+                    all_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=reverse_sort)
+                print(f"📋 Combined {len(message_list)} prefix messages with {len(unknown_messages)} unknown messages")
+            
+            return jsonify({
+                'success': True,
+                'prefix': prefix,
+                'matching_rooms': matching_room_ids,
+                'room_count': len(matching_room_ids),
+                'messages': all_messages if include_unknown_room else message_list,
+                'prefix_message_count': len(message_list),
+                'unknown_message_count': unknown_count,
+                'total_messages': len(all_messages),
+                'prefix_total': total_count,
+                'skip': skip,
+                'limit': limit,
+                'grouped': False,
+                'ordered_by': f"{order_by} ({order_direction}ending)",
+                'selected_fields': selected_fields,
+                'include_ai': include_ai,
+                'include_unknown_room': include_unknown_room
+            })
+        
+    except Exception as e:
+        print(f"❌ Error retrieving messages for prefix {prefix}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rooms/prefix/<prefix>/messages/csv', methods=['GET'])
+def get_messages_by_room_prefix_csv(prefix):
+    """Get chat messages for all rooms that start with a specific prefix in CSV format"""
+    try:
+        from database.models import ChatMessage
+        import csv
+        from io import StringIO
+        import re
+        
+        # Get query parameters
+        limit = request.args.get('limit', default=1000, type=int)  # Higher default for CSV
+        skip = request.args.get('skip', default=0, type=int)
+        include_ai = request.args.get('include_ai', default='true').lower() == 'true'
+        only_ai = request.args.get('only_ai', default='false').lower() == 'true'
+        fields = request.args.get('fields', 'timestamp,user_id,ai_trigger_type,content')  # Default fields
+        include_unknown_room = request.args.get('include_unknown_room', default='false').lower() == 'true'
+        
+        # Build regex pattern for room_id prefix matching
+        escaped_prefix = re.escape(prefix)
+        room_pattern = f"^{escaped_prefix}.*"
+        
+        # Build query with regex for room_id
+        query = {'room_id': {'$regex': room_pattern, '$options': 'i'}}
+        
+        # Handle AI message filtering
+        if only_ai:
+            query['is_ai_message'] = True
+        elif not include_ai:
+            query['is_ai_message'] = False
+        
+        print(f"🔍 CSV Export: Searching for rooms with prefix: {prefix}")
+        print(f"🔍 CSV Export: Using regex pattern: {room_pattern}")
+        
+        # Parse fields parameter
+        selected_fields = [f.strip() for f in fields.split(',')]
+        print(f"📋 CSV Export: Selected fields: {selected_fields}")
+        
+        # Get order parameters
+        order_by = request.args.get('order_by', 'timestamp')
+        order_direction = request.args.get('order_direction', 'asc')  # Default ascending for CSV
+        order_field = f"-{order_by}" if order_direction == 'desc' else order_by
+        
+        # Get all messages from matching rooms ordered by timestamp
+        messages = ChatMessage.objects(**query).order_by(order_field).skip(skip).limit(limit)
+        message_list = list(messages)  # Convert to list for processing
+        
+        # If include_unknown_room is true, get timestamp range and fetch unknown room messages
+        unknown_messages = []
+        
+        if include_unknown_room and message_list:
+            print(f"📋 CSV Export: Including unknown room_id messages within timestamp range for prefix {prefix}")
+            
+            # Get timestamp range from the fetched messages
+            timestamps = [msg.timestamp for msg in message_list if msg.timestamp]
+            if timestamps:
+                min_timestamp = min(timestamps)
+                max_timestamp = max(timestamps)
+                
+                print(f"🔍 CSV Export: Timestamp range for prefix {prefix}: {min_timestamp} to {max_timestamp}")
+                
+                # Build query for unknown room messages within timestamp range
+                # Only include if prefix doesn't already match 'unknown'
+                if not re.match(f"^{re.escape(prefix)}.*", 'unknown', re.IGNORECASE):
+                    unknown_query = {
+                        'room_id': 'unknown',
+                        'timestamp__gte': min_timestamp,
+                        'timestamp__lte': max_timestamp
+                    }
+                    
+                    # Apply same AI filtering to unknown messages
+                    if only_ai:
+                        unknown_query['is_ai_message'] = True
+                    elif not include_ai:
+                        unknown_query['is_ai_message'] = False
+                    
+                    print(f"🔍 CSV Export: Unknown query for prefix {prefix}: {unknown_query}")
+                    
+                    # Get unknown room messages within the timestamp range
+                    unknown_msg_objects = ChatMessage.objects(**unknown_query).order_by(order_field)
+                    unknown_messages = list(unknown_msg_objects)
+                    
+                    print(f"📋 CSV Export: Found {len(unknown_messages)} unknown room messages in timestamp range for prefix {prefix}")
+                else:
+                    print(f"📋 CSV Export: Skipping unknown room search since prefix '{prefix}' already matches 'unknown'")
+        
+        elif include_unknown_room and not message_list:
+            print(f"📋 CSV Export: No messages found for prefix {prefix}, cannot determine timestamp range for unknown messages")
+        
+        # Combine all messages
+        all_messages = message_list + unknown_messages
+        if include_unknown_room and unknown_messages:
+            # Sort combined messages by timestamp
+            if order_by == 'timestamp':
+                reverse_sort = (order_direction == 'desc')
+                all_messages.sort(key=lambda x: x.timestamp, reverse=reverse_sort)
+            print(f"📋 CSV Export: Combined {len(message_list)} prefix messages with {len(unknown_messages)} unknown messages")
+        
+        # Create CSV in memory
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Write header row
+        writer.writerow(selected_fields)
+        
+        # Write data rows
+        for message in all_messages:
+            message_dict = message.to_dict()
+            row = []
+            for field in selected_fields:
+                value = message_dict.get(field, '')
+                # Handle special cases
+                if field == 'content' and value:
+                    # Clean content for CSV (remove newlines, quotes)
+                    value = str(value).replace('\n', ' ').replace('\r', ' ').strip()
+                elif field == 'timestamp' and value:
+                    # Format timestamp consistently
+                    value = str(value)
+                elif field == 'ai_trigger_type' and not value:
+                    # Empty string for None values
+                    value = ''
+                else:
+                    value = str(value) if value is not None else ''
+                row.append(value)
+            writer.writerow(row)
+        
+        # Get CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Count total matching messages for metadata
+        total_count = ChatMessage.objects(**query).count()
+        matching_room_ids = ChatMessage.objects(**query).distinct('room_id')
+        
+        # Calculate row count for logging (avoid backslash in f-string)
+        csv_lines = csv_content.split('\n')
+        row_count = len(csv_lines) - 1
+        print(f"📊 CSV Export: Generated CSV with {row_count} rows from {len(matching_room_ids)} rooms")
+        
+        # Return CSV with appropriate headers
+        response = app.response_class(
+            csv_content,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename="{prefix}_messages.csv"',
+                'X-Total-Count': str(total_count),
+                'X-Room-Count': str(len(matching_room_ids)),
+                'X-Selected-Fields': ','.join(selected_fields),
+                'X-Prefix-Message-Count': str(len(message_list)),
+                'X-Unknown-Message-Count': str(len(unknown_messages)),
+                'X-Total-Messages': str(len(all_messages)),
+                'X-Include-Unknown-Room': str(include_unknown_room)
+            }
+        )
+        return response
+        
+    except Exception as e:
+        print(f"❌ Error generating CSV for prefix {prefix}: {e}")
+        # Return JSON error for CSV endpoint
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
