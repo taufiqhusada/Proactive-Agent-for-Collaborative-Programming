@@ -1775,6 +1775,11 @@ def get_messages_by_room(room_id):
         order_by = request.args.get('order_by', 'timestamp')
         order_direction = request.args.get('order_direction', 'desc')
         
+        # Date filtering parameters
+        date_filter = request.args.get('date')  # Specific date (YYYY-MM-DD)
+        date_from = request.args.get('date_from')  # Start date (YYYY-MM-DD)
+        date_to = request.args.get('date_to')  # End date (YYYY-MM-DD)
+        
         # Build ordering string
         order_field = f"-{order_by}" if order_direction == 'desc' else order_by
         
@@ -1787,15 +1792,72 @@ def get_messages_by_room(room_id):
         elif not include_ai:
             query['is_ai_message'] = False
         
-        # Helper function to filter message fields
+        # Handle date filtering
+        if date_filter:
+            # Filter for specific date (full day)
+            from datetime import datetime, timedelta
+            try:
+                target_date = datetime.strptime(date_filter, '%Y-%m-%d')
+                start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
+                query['timestamp__gte'] = start_of_day
+                query['timestamp__lte'] = end_of_day
+                print(f"🗓️ Filtering messages for date: {date_filter} ({start_of_day} to {end_of_day})")
+            except ValueError:
+                print(f"❌ Invalid date format: {date_filter}. Use YYYY-MM-DD format.")
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
+        
+        elif date_from or date_to:
+            # Filter for date range
+            from datetime import datetime, timedelta
+            try:
+                if date_from:
+                    start_date = datetime.strptime(date_from, '%Y-%m-%d')
+                    start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    query['timestamp__gte'] = start_of_day
+                    print(f"🗓️ Filtering messages from date: {date_from} ({start_of_day})")
+                
+                if date_to:
+                    end_date = datetime.strptime(date_to, '%Y-%m-%d')
+                    end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    query['timestamp__lte'] = end_of_day
+                    print(f"🗓️ Filtering messages to date: {date_to} ({end_of_day})")
+                    
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
+        
+        # Helper function to filter message fields with support for nested fields
         def filter_message_fields(message_dict, selected_fields=None):
             if not selected_fields:
                 return message_dict
             
             filtered = {}
             for field in selected_fields:
-                if field in message_dict:
+                # Handle nested field access with dot notation (e.g., extra_data.code_block)
+                if '.' in field:
+                    parts = field.split('.')
+                    current_data = message_dict
+                    
+                    # Navigate through nested structure
+                    for part in parts:
+                        # Handle both regular dict and MongoEngine BaseDict
+                        if (isinstance(current_data, dict) or hasattr(current_data, 'get')) and part in current_data:
+                            current_data = current_data[part]
+                        else:
+                            current_data = None
+                            break
+                    
+                    # Store the nested value using the full field path as key
+                    filtered[field] = current_data
+                
+                # Handle regular top-level fields
+                elif field in message_dict:
                     filtered[field] = message_dict[field]
+                
+                # Handle field not found
+                else:
+                    filtered[field] = None
+                    
             return filtered
         
         # Parse fields parameter
@@ -1946,7 +2008,10 @@ def get_messages_by_room(room_id):
             'selected_fields': selected_fields,
             'include_ai': include_ai,
             'include_unknown_room': include_unknown_room,
-            'ordered_by': f"{order_by} ({order_direction}ending)"
+            'ordered_by': f"{order_by} ({order_direction}ending)",
+            'date_filter': date_filter,
+            'date_from': date_from,
+            'date_to': date_to
         })
         
     except Exception as e:
@@ -1970,6 +2035,11 @@ def get_messages_by_room_prefix(prefix):
         fields = request.args.get('fields')  # Comma-separated list of fields
         include_unknown_room = request.args.get('include_unknown_room', default='false').lower() == 'true'
         
+        # Date filtering parameters
+        date_filter = request.args.get('date')  # Specific date (YYYY-MM-DD)
+        date_from = request.args.get('date_from')  # Start date (YYYY-MM-DD)
+        date_to = request.args.get('date_to')  # End date (YYYY-MM-DD)
+        
         # Build regex pattern for room_id prefix matching
         # Escape special regex characters in prefix and add .* for anything after
         escaped_prefix = re.escape(prefix)
@@ -1984,22 +2054,80 @@ def get_messages_by_room_prefix(prefix):
         elif not include_ai:
             query['is_ai_message'] = False
         
-        print(f"🔍 Searching for rooms with prefix: {prefix}")
-        print(f"🔍 Using regex pattern: {room_pattern}")
+        # Handle date filtering
+        if date_filter:
+            # Filter for specific date (full day)
+            from datetime import datetime, timedelta
+            try:
+                target_date = datetime.strptime(date_filter, '%Y-%m-%d')
+                start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
+                query['timestamp__gte'] = start_of_day; query['timestamp__lte'] = end_of_day
+                print(f"�️ Filtering messages for date: {date_filter} ({start_of_day} to {end_of_day})")
+            except ValueError:
+                print(f"❌ Invalid date format: {date_filter}. Use YYYY-MM-DD format.")
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
         
-        # Helper function to filter message fields
+        elif date_from or date_to:
+            # Filter for date range
+            from datetime import datetime, timedelta
+            try:
+                if date_from:
+                    start_date = datetime.strptime(date_from, '%Y-%m-%d')
+                    start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    query['timestamp__gte'] = start_of_day
+                    print(f"🗓️ Filtering messages from date: {date_from} ({start_of_day})")
+                
+                if date_to:
+                    end_date = datetime.strptime(date_to, '%Y-%m-%d')
+                    end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    query['timestamp__lte'] = end_of_day
+                    print(f"🗓️ Filtering messages to date: {date_to} ({end_of_day})")
+                
+                    
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
+        
+        print(f"�🔍 Searching for rooms with prefix: {prefix}")
+        print(f"🔍 Using regex pattern: {room_pattern}")
+        print(f"🔍 Final query: {query}")
+        
+        # Helper function to filter message fields with support for nested fields
         def filter_message_fields(message_dict, selected_fields=None):
             if not selected_fields:
                 return message_dict
             
             filtered = {}
             for field in selected_fields:
-                if field in message_dict:
+                # Handle nested field access with dot notation (e.g., extra_data.code_block)
+                if '.' in field:
+                    parts = field.split('.')
+                    current_data = message_dict
+                    
+                    # Navigate through nested structure
+                    for part in parts:
+                        # Handle both regular dict and MongoEngine BaseDict
+                        if (isinstance(current_data, dict) or hasattr(current_data, 'get')) and part in current_data:
+                            current_data = current_data[part]
+                        else:
+                            current_data = None
+                            break
+                    
+                    # Store the nested value using the full field path as key
+                    filtered[field] = current_data
+                
+                # Handle regular top-level fields
+                elif field in message_dict:
                     filtered[field] = message_dict[field]
                 elif field == 'user_id':  # Handle alias
                     filtered['user_id'] = message_dict.get('user_id')
                 elif field == 'ai_trigger_type':
                     filtered['ai_trigger_type'] = message_dict.get('ai_trigger_type')
+                
+                # Handle field not found
+                else:
+                    filtered[field] = None
+                    
             return filtered
         
         # Parse fields parameter
@@ -2049,7 +2177,10 @@ def get_messages_by_room_prefix(prefix):
                 'grouped': True,
                 'ordered_by': f"{order_by} ({order_direction}ending)",
                 'selected_fields': selected_fields,
-                'include_ai': include_ai
+                'include_ai': include_ai,
+                'date_filter': date_filter,
+                'date_from': date_from,
+                'date_to': date_to
             })
         else:
             # Get all messages from matching rooms (flat list) - ordered by timestamp across all rooms
@@ -2143,7 +2274,10 @@ def get_messages_by_room_prefix(prefix):
                 'ordered_by': f"{order_by} ({order_direction}ending)",
                 'selected_fields': selected_fields,
                 'include_ai': include_ai,
-                'include_unknown_room': include_unknown_room
+                'include_unknown_room': include_unknown_room,
+                'date_filter': date_filter,
+                'date_from': date_from,
+                'date_to': date_to
             })
         
     except Exception as e:
@@ -2168,6 +2302,11 @@ def get_messages_by_room_prefix_csv(prefix):
         fields = request.args.get('fields', 'timestamp,user_id,ai_trigger_type,content')  # Default fields
         include_unknown_room = request.args.get('include_unknown_room', default='false').lower() == 'true'
         
+        # Date filtering parameters
+        date_filter = request.args.get('date')  # Specific date (YYYY-MM-DD)
+        date_from = request.args.get('date_from')  # Start date (YYYY-MM-DD)
+        date_to = request.args.get('date_to')  # End date (YYYY-MM-DD)
+        
         # Build regex pattern for room_id prefix matching
         escaped_prefix = re.escape(prefix)
         room_pattern = f"^{escaped_prefix}.*"
@@ -2181,8 +2320,43 @@ def get_messages_by_room_prefix_csv(prefix):
         elif not include_ai:
             query['is_ai_message'] = False
         
-        print(f"🔍 CSV Export: Searching for rooms with prefix: {prefix}")
+        # Handle date filtering
+        if date_filter:
+            # Filter for specific date (full day)
+            from datetime import datetime, timedelta
+            try:
+                target_date = datetime.strptime(date_filter, '%Y-%m-%d')
+                start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = start_of_day + timedelta(days=1) - timedelta(microseconds=1)
+                query['timestamp__gte'] = start_of_day; query['timestamp__lte'] = end_of_day
+                print(f"�️ CSV Export: Filtering messages for date: {date_filter} ({start_of_day} to {end_of_day})")
+            except ValueError:
+                print(f"❌ Invalid date format: {date_filter}. Use YYYY-MM-DD format.")
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
+        
+        elif date_from or date_to:
+            # Filter for date range
+            from datetime import datetime, timedelta
+            try:
+                if date_from:
+                    start_date = datetime.strptime(date_from, '%Y-%m-%d')
+                    start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    query['timestamp__gte'] = start_of_day
+                    print(f"🗓️ CSV Export: Filtering messages from date: {date_from} ({start_of_day})")
+                
+                if date_to:
+                    end_date = datetime.strptime(date_to, '%Y-%m-%d')
+                    end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    query['timestamp__lte'] = end_of_day
+                    print(f"🗓️ CSV Export: Filtering messages to date: {date_to} ({end_of_day})")
+                
+                    
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD format.'}), 400
+        
+        print(f"�🔍 CSV Export: Searching for rooms with prefix: {prefix}")
         print(f"🔍 CSV Export: Using regex pattern: {room_pattern}")
+        print(f"🔍 CSV Export: Final query: {query}")
         
         # Parse fields parameter
         selected_fields = [f.strip() for f in fields.split(',')]
@@ -2260,8 +2434,26 @@ def get_messages_by_room_prefix_csv(prefix):
             message_dict = message.to_dict()
             row = []
             for field in selected_fields:
-                value = message_dict.get(field, '')
-                # Handle special cases
+                # Handle nested field access with dot notation (e.g., extra_data.code_block)
+                if '.' in field:
+                    parts = field.split('.')
+                    current_data = message_dict
+                    
+                    # Navigate through nested structure
+                    for part in parts:
+                        # Handle both regular dict and MongoEngine BaseDict
+                        if (isinstance(current_data, dict) or hasattr(current_data, 'get')) and part in current_data:
+                            current_data = current_data[part]
+                        else:
+                            current_data = None
+                            break
+                    
+                    value = current_data
+                else:
+                    # Handle regular top-level fields
+                    value = message_dict.get(field, '')
+                
+                # Handle special cases for formatting
                 if field == 'content' and value:
                     # Clean content for CSV (remove newlines, quotes)
                     value = str(value).replace('\n', ' ').replace('\r', ' ').strip()
@@ -2271,8 +2463,12 @@ def get_messages_by_room_prefix_csv(prefix):
                 elif field == 'ai_trigger_type' and not value:
                     # Empty string for None values
                     value = ''
+                elif value is None:
+                    # Handle null nested values
+                    value = ''
                 else:
-                    value = str(value) if value is not None else ''
+                    value = str(value)
+                    
                 row.append(value)
             writer.writerow(row)
         
@@ -2301,7 +2497,10 @@ def get_messages_by_room_prefix_csv(prefix):
                 'X-Prefix-Message-Count': str(len(message_list)),
                 'X-Unknown-Message-Count': str(len(unknown_messages)),
                 'X-Total-Messages': str(len(all_messages)),
-                'X-Include-Unknown-Room': str(include_unknown_room)
+                'X-Include-Unknown-Room': str(include_unknown_room),
+                'X-Date-Filter': str(date_filter) if date_filter else '',
+                'X-Date-From': str(date_from) if date_from else '',
+                'X-Date-To': str(date_to) if date_to else ''
             }
         )
         return response
