@@ -35,8 +35,8 @@ socketio = SocketIO(
     cors_allowed_origins="*",
     logger=False,  # Disable verbose logging
     engineio_logger=False,  # Disable engine.io detailed logging
-    # async_mode="threading",  # Use threading instead of eventlet in local development
-    async_mode="eventlet", # this is for GCP deployment
+    async_mode="threading",  # Use threading instead of eventlet in local development
+    # async_mode="eventlet", # this is for GCP deployment
     # Support both transports for better compatibility
     transports=['websocket', 'polling'],
     # Better timeout settings to prevent idle disconnections
