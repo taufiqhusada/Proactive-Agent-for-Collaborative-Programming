@@ -1009,10 +1009,10 @@ Your response:"""
             self.intervention_service.cancel_intervention(room_id, "code update received")
             print(f"🖥️ Code updated in room {room_id} - cancelled pending timer")
         
-        # Check for planning intervention (only once per session)
-        if not context.planning_check_done:
-            print(f"🔍 Checking for planning intervention in room {room_id}")
-            self._check_planning_intervention(room_id)
+        # Planning intervention has been disabled
+        # if not context.planning_check_done:
+        #     print(f"🔍 Checking for planning intervention in room {room_id}")
+        #     self._check_planning_intervention(room_id)
 
     def update_execution_results(self, room_id: str, code: str, output: str, error: str, success: bool):
         """Update execution results and potentially reset intervention level on success"""
@@ -1319,85 +1319,12 @@ Your response:"""
 
 
     def _check_planning_intervention(self, room_id: str):
-        """Check if planning intervention is needed when code is first written"""
-        try:
-            if not self.client:
-                print("⚠️ Cannot check planning: No LLM client available")
-                return
-            
-            context = self.conversation_history.get(room_id)
-            if not context:
-                return
-            
-            # Check if there are any user chat messages (indicating session activity)
-            if len(context.messages) == 0:
-                print("🔍 Planning intervention skipped: No user chat messages yet (session not started)")
-                return
-            
-            # Mark as done to prevent multiple checks
+        """This function has been disabled - planning intervention removed"""
+        # Setting flag to true to prevent any calls to this function
+        context = self.conversation_history.get(room_id)
+        if context:
             context.planning_check_done = True
-            
-            # Build conversation history for LLM
-            conversation = ""
-            for msg in context.messages:
-                conversation += f"{msg.username}: {msg.content}\n"
-            
-            # Single LLM call to decide if planning intervention is needed
-            prompt = f"""You are Bob, an AI pair programming assistant. A user just started writing code.
-
-Problem Context: {context.problem_description or context.problem_title or "General coding task"}
-
-Conversation so far:
-{conversation}
-
-Current code being written:
-```{context.programming_language}
-{context.code_context[:200]}
-```
-
-TASK: Analyze if the users have discussed a proper plan before coding.
-
-Good planning indicators:
-- Discussed approach, algorithm, or strategy
-- Talked about steps or breakdown
-- Mentioned data structures or methods to use
-- Asked questions about the problem
-
-Respond with ONE of these formats:
-- If they have a plan: "NO_INTERVENTION"
-- If no planning discussion: "ASK_PLAN|What's your approach? Let's discuss the plan before diving into code!"
-- If some discussion but needs more detail: "DETAILED_PLAN|I see you're thinking about this. Can you break down your approach step by step?"
-
-Your response:"""
-
-            response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "system", "content": "You are a helpful pair programming assistant focused on encouraging good planning practices."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=100,
-                temperature=0.3
-            )
-            
-            llm_response = response.choices[0].message.content.strip()
-            print(f"🧠 Planning LLM response: {llm_response}")
-            
-            # Parse LLM response and send intervention if needed
-            if llm_response.startswith("ASK_PLAN|") or llm_response.startswith("DETAILED_PLAN|"):
-                parts = llm_response.split("|", 1)
-                if len(parts) >= 2:
-                    intervention_message = parts[1]
-                    print(f"📋 Sending planning intervention: {intervention_message}")
-                    self.send_ai_message(room_id, intervention_message)
-            else:
-                print(f"📋 No planning intervention needed for room {room_id}")
-                
-        except Exception as e:
-            print(f"❌ Error in planning intervention check: {e}")
-            # Mark as done even on error to prevent retries
-            if room_id in self.conversation_history:
-                self.conversation_history[room_id].planning_check_done = True
+        return
 
     def reset_room_state(self, room_id: str):
         """Reset all AI agent state for a specific room"""
