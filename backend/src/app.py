@@ -21,10 +21,17 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from services.ai_agent import init_ai_agent, get_ai_agent
 from services.scaffolding_service import ScaffoldingService
 from services.individual_ai_service import init_individual_ai_service, get_individual_ai_service
-from database.db import init_db, close_db
-from database.models import CodeExecution
+from database.db import init_db, close_db, is_mongodb_enabled
 
 load_dotenv()
+
+# Conditionally import database models (only if mongoengine is available)
+try:
+    from database.models import CodeExecution
+    _models_available = True
+except ImportError:
+    _models_available = False
+    CodeExecution = None
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", "change-me")
@@ -128,12 +135,23 @@ individual_ai_service = init_individual_ai_service(socketio)
 from services.todo_reveal_service import TodoRevealService
 todo_reveal_service = TodoRevealService()
 
-# Initialize Database
+# Initialize Database (optional - will gracefully continue without MongoDB)
 init_db()
 
 # Initialize Reflection Service
 from services.ai_reflection import init_reflection_service
 reflection_service = init_reflection_service(socketio)
+
+# Helper function for database operations
+def db_operation_required():
+    """Check if database is required and return appropriate error response if not available"""
+    if not is_mongodb_enabled():
+        return jsonify({
+            'success': False,
+            'error': 'Database not available',
+            'message': 'MongoDB is not configured. Data tracking is disabled.'
+        }), 503
+    return None
 
 # Track active scaffolding requests to prevent duplicates
 active_scaffolding_requests = {}  # {comment_id: {'timestamp': time, 'user_id': request.sid}}
@@ -740,20 +758,21 @@ def execute_code_endpoint():
                     message_count = len(chat_history)
                     print(f"📚 Captured {message_count} messages for code execution context")
                 
-                code_execution = CodeExecution(
-                    room_id=room_id,
-                    session_id=session_id,
-                    code=code,
-                    language=language,
-                    timestamp=datetime.utcnow(),
-                    execution_output=result.get('output', ''),
-                    execution_error=result.get('error', ''),
-                    execution_time_ms=int(result.get('executionTime', 0)),
-                    chat_history=chat_history,
-                    message_count=message_count
-                )
-                code_execution.save()
-                print(f"💾 Saved code execution to database for room {room_id} (with {message_count} chat messages)")
+                if is_mongodb_enabled() and _models_available:
+                    code_execution = CodeExecution(
+                        room_id=room_id,
+                        session_id=session_id,
+                        code=code,
+                        language=language,
+                        timestamp=datetime.utcnow(),
+                        execution_output=result.get('output', ''),
+                        execution_error=result.get('error', ''),
+                        execution_time_ms=int(result.get('executionTime', 0)),
+                        chat_history=chat_history,
+                        message_count=message_count
+                    )
+                    code_execution.save()
+                    print(f"💾 Saved code execution to database for room {room_id} (with {message_count} chat messages)")
             except Exception as db_error:
                 print(f"⚠️  Database save error (non-blocking): {db_error}")
         
@@ -1484,6 +1503,10 @@ def manual_progress_check(room_id):
 def get_code_executions(room_id):
     """Get code execution history for a specific room"""
     try:
+        error_response = db_operation_required()
+        if error_response:
+            return error_response
+        
         # Get query parameters for pagination and filtering
         limit = request.args.get('limit', 50, type=int)
         skip = request.args.get('skip', 0, type=int)
@@ -1717,6 +1740,10 @@ def get_conversation_stats():
 def get_room_ids():
     """Get distinct room IDs from chat messages"""
     try:
+        error_response = db_operation_required()
+        if error_response:
+            return error_response
+            
         from database.models import ChatMessage
         
         # Get query parameters
@@ -1763,6 +1790,10 @@ def get_room_ids():
 def get_messages_by_room(room_id):
     """Get chat messages for a specific room ID, with option to include unknown room_id messages from same timeframe"""
     try:
+        error_response = db_operation_required()
+        if error_response:
+            return error_response
+            
         from database.models import ChatMessage
         
         # Get query parameters
@@ -2023,6 +2054,10 @@ def get_messages_by_room(room_id):
 def get_messages_by_room_prefix(prefix):
     """Get chat messages for all rooms that start with a specific prefix"""
     try:
+        error_response = db_operation_required()
+        if error_response:
+            return error_response
+            
         from database.models import ChatMessage
         import re
         
@@ -2289,6 +2324,10 @@ def get_messages_by_room_prefix(prefix):
 def get_messages_by_room_prefix_csv(prefix):
     """Get chat messages for all rooms that start with a specific prefix in CSV format"""
     try:
+        error_response = db_operation_required()
+        if error_response:
+            return error_response
+            
         from database.models import ChatMessage
         import csv
         from io import StringIO

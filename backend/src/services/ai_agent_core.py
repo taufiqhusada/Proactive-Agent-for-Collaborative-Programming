@@ -18,7 +18,15 @@ from .ai_audio import AIAudioService
 from .ai_intervention import AIInterventionService
 from .ai_code_analysis import AICodeAnalysisService
 from .ai_reflection import get_reflection_service
-from database.models import ChatMessage
+from database.db import is_mongodb_enabled
+
+# Conditionally import ChatMessage only if needed
+try:
+    from database.models import ChatMessage
+    _models_available = True
+except ImportError:
+    _models_available = False
+    ChatMessage = None
 
 
 class AIAgent:
@@ -67,6 +75,10 @@ class AIAgent:
 
     def _save_message_to_db_async(self, message: Message, context: 'ConversationContext'):
         """Save message to MongoDB asynchronously"""
+        # Skip if MongoDB is not enabled
+        if not is_mongodb_enabled() or not _models_available:
+            return
+            
         print("Saving message to DB async...", message)  # Debug print
         def save_to_db():
             try:
@@ -137,6 +149,10 @@ class AIAgent:
 
     def _save_tracking_message_to_db_async(self, content: str, room_id: str, ai_trigger_type: str, username: str = None, extra_data: dict = None):
         """Save AI tracking message directly to database without adding to conversation context"""
+        # Skip if MongoDB is not enabled
+        if not is_mongodb_enabled() or not _models_available:
+            return
+            
         def save_to_db():
             try:
                 # Get session context for session_id and message counter
@@ -332,6 +348,8 @@ class AIAgent:
 
     def get_session_messages(self, session_id: str, limit: int = None) -> List[Dict]:
         """Retrieve all messages for a session from MongoDB"""
+        if not is_mongodb_enabled() or not _models_available:
+            return []
         try:
             query = ChatMessage.objects(session_id=session_id).order_by('message_number')
             if limit:
@@ -347,6 +365,8 @@ class AIAgent:
 
     def get_room_messages(self, room_id: str, limit: int = 50) -> List[Dict]:
         """Retrieve recent messages for a room from MongoDB"""
+        if not is_mongodb_enabled() or not _models_available:
+            return []
         try:
             query = ChatMessage.objects(room_id=room_id).order_by('-timestamp')
             if limit:
@@ -364,6 +384,8 @@ class AIAgent:
 
     def get_ai_messages_by_trigger(self, room_id: str = None, ai_trigger_type: str = None, limit: int = 50) -> List[Dict]:
         """Retrieve AI messages by trigger type for analysis"""
+        if not is_mongodb_enabled() or not _models_available:
+            return []
         try:
             # Build query filters
             filters = {'is_ai_message': True}
@@ -386,6 +408,8 @@ class AIAgent:
 
     def get_conversation_stats(self, room_id: str = None, session_id: str = None) -> Dict:
         """Get conversation statistics for analytics"""
+        if not is_mongodb_enabled() or not _models_available:
+            return {}
         try:
             # Build base query
             filters = {}
@@ -428,6 +452,8 @@ class AIAgent:
 
     def get_user_conversation_history(self, user_id: str, limit: int = 100) -> List[Dict]:
         """Get all conversations for a specific user across all rooms"""
+        if not is_mongodb_enabled() or not _models_available:
+            return []
         try:
             query = ChatMessage.objects(user_id=user_id).order_by('-timestamp')
             if limit:
@@ -443,6 +469,8 @@ class AIAgent:
 
     def search_messages(self, query_text: str, room_id: str = None, user_id: str = None, limit: int = 50) -> List[Dict]:
         """Search messages by content"""
+        if not is_mongodb_enabled() or not _models_available:
+            return []
         try:
             # Build MongoDB text search query
             filters = {'content__icontains': query_text}  # Case-insensitive substring search

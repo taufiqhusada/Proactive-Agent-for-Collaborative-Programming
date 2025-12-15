@@ -15,8 +15,8 @@ The project consists of two main components:
 
 - Python 3.8+
 - Node.js 18+
-- MongoDB
 - OpenAI API key
+- MongoDB (Optional)
 
 ### Backend Setup
 
@@ -35,17 +35,19 @@ The project consists of two main components:
    cp src/.env.example src/.env
    ```
    
-   Then edit `src/.env` with your values:
+   Then edit `src/.env` with your required values:
    ```env
    OPENAI_API_KEY=your-openai-api-key
-   MONGODB_URI=your-mongodb-uri  # Optional, for data tracking
+   
+   # Optional: Enable MongoDB for data tracking
+   # Leave blank or commented out to run without database
+   # MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database
    ```
 
 4. Run the backend server:
    ```bash
    flask --app src/app run
    ```
-   
 
 The backend will run on `http://127.0.0.1:5000` by default.
 
