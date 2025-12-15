@@ -21,45 +21,7 @@
                 >
                     ⚙️
                 </button>
-                
-                <!-- Reflection Toggle Button -->
-                <button 
-                    v-if="!reflectionActive"
-                    @click="$emit('start-reflection')"
-                    class="reflection-button-small"
-                    title="Start learning reflection"
-                >
-                    🎓 Reflect
-                </button>
-                <button 
-                    v-else
-                    @click="$emit('stop-reflection')"
-                    class="reflection-stop-button"
-                    title="Stop reflection and return to normal mode"
-                >
-                    🎓 Exit Reflection
-                </button>
-                
-                <!-- Manual Progress Check Button -->
-                <button 
-                    @click="triggerManualProgressCheck"
-                    class="progress-check-button"
-                    title="Check progress manually"
-                    :disabled="isCheckingProgress"
-                >
-                    <span v-if="!isCheckingProgress">📊 Check</span>
-                    <span v-else>⏳</span>
-                </button>
             </div>
-        </div>
-        
-        <!-- Only show description before session starts -->
-        <div v-if="!sessionStarted" class="ai-description">
-            <p class="ai-desc-text">
-                {{ reflectionActive 
-                    ? 'Bob is guiding your learning reflection. You can exit anytime!' 
-                    : 'Hi, I\'m Bob, your proactive AI teammate. I\'m listening and can jump in to help!' }}
-            </p>
         </div>
     </div>
     
@@ -135,7 +97,7 @@ export default defineComponent({
         const interventionSettings = ref({
             idle_intervention_enabled: true,
             idle_intervention_delay: 5,
-            progress_check_enabled: true,
+            progress_check_enabled: false,
             progress_check_interval: 45
         })
         
